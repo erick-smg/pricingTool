@@ -1,0 +1,8 @@
+:host {
+  display: block;
+}
+
+.slds-text-title {
+  color: var(--lwc-colorTextWeak, #706e6b);
+  margin-bottom: 0.25rem;
+}

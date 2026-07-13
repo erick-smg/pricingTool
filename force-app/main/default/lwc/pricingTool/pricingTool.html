@@ -1,0 +1,672 @@
+<template>
+  <lightning-card title="SMG Pricing Tool" icon-name="standard:pricebook">
+    <div class="slds-p-around_medium">
+      <lightning-layout multiple-rows="true">
+        <lightning-layout-item size="4" padding="around-small">
+          <lightning-input
+            data-id="locations-input"
+            type="number"
+            label="Locations"
+            value={locations}
+            min="1"
+            step="1"
+            onchange={handleLocationsChange}
+          ></lightning-input>
+        </lightning-layout-item>
+      </lightning-layout>
+
+      <template if:true={isEnterprise}>
+        <div
+          class="slds-notify slds-notify_alert slds-theme_alert-texture slds-theme_warning slds-m-bottom_small"
+          role="alert"
+        >
+          {locations} locations exceeds the 1,250-location standard pricing
+          ceiling. See the
+          <strong>Enterprise</strong> tab for pricing.
+        </div>
+      </template>
+
+      <lightning-tabset variant="scoped">
+        <!-- ============ QUOTE BUILDER ============ -->
+        <lightning-tab label="Quote Builder">
+          <lightning-combobox
+            data-id="plan-combobox"
+            label="Plan"
+            value={selectedPlan}
+            options={planOptions}
+            onchange={handlePlanChange}
+            class="slds-m-bottom_medium"
+          ></lightning-combobox>
+
+          <template if:false={isEnterprise}>
+            <h3 class="slds-text-heading_small slds-m-bottom_x-small">
+              Base Package — Volume Tiers
+            </h3>
+            <table
+              class="slds-table slds-table_bordered slds-table_cell-buffer"
+            >
+              <thead>
+                <tr class="slds-line-height_reset">
+                  <th scope="col">Tier</th>
+                  <th scope="col">Locations</th>
+                  <th scope="col">Rate / Mo</th>
+                  <th scope="col">Monthly $</th>
+                  <th scope="col">Annual $</th>
+                  <th scope="col">Est. GM%</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template for:each={baseQuote.buckets} for:item="bucket">
+                  <tr key={bucket.label}>
+                    <td>{bucket.label}</td>
+                    <td>{bucket.locationsInBucket}</td>
+                    <td>
+                      <lightning-formatted-number
+                        value={bucket.ratePerMonth}
+                        format-style="currency"
+                        currency-code="USD"
+                      ></lightning-formatted-number>
+                    </td>
+                    <td>
+                      <lightning-formatted-number
+                        value={bucket.monthly}
+                        format-style="currency"
+                        currency-code="USD"
+                      ></lightning-formatted-number>
+                    </td>
+                    <td>
+                      <lightning-formatted-number
+                        value={bucket.annual}
+                        format-style="currency"
+                        currency-code="USD"
+                      ></lightning-formatted-number>
+                    </td>
+                    <td>
+                      <template if:true={bucket.gmPercent}>
+                        <lightning-formatted-number
+                          value={bucket.gmPercent}
+                          format-style="percent"
+                          maximum-fraction-digits="1"
+                        ></lightning-formatted-number>
+                      </template>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </template>
+
+          <h3
+            class="slds-text-heading_small slds-m-top_medium slds-m-bottom_x-small"
+          >
+            Add-Ons (over and above base package)
+          </h3>
+          <lightning-layout multiple-rows="true">
+            <lightning-layout-item size="4" padding="around-small">
+              <lightning-input
+                type="number"
+                label="Add'l Languages"
+                data-field="additionalLanguages"
+                value={additionalLanguages}
+                min="0"
+                step="1"
+                onchange={handleAddOnQtyChange}
+              ></lightning-input>
+            </lightning-layout-item>
+            <lightning-layout-item size="4" padding="around-small">
+              <lightning-input
+                type="number"
+                label="Add'l Surveys"
+                data-field="additionalSurveys"
+                value={additionalSurveys}
+                min="0"
+                step="1"
+                onchange={handleAddOnQtyChange}
+              ></lightning-input>
+            </lightning-layout-item>
+            <lightning-layout-item size="4" padding="around-small">
+              <lightning-input
+                type="number"
+                label="Add'l Survey Revisions"
+                data-field="additionalSurveyRevisions"
+                value={additionalSurveyRevisions}
+                min="0"
+                step="1"
+                onchange={handleAddOnQtyChange}
+              ></lightning-input>
+            </lightning-layout-item>
+            <lightning-layout-item size="4" padding="around-small">
+              <lightning-input
+                type="number"
+                label="Add'l Integrations"
+                data-field="additionalIntegrations"
+                value={additionalIntegrations}
+                min="0"
+                step="1"
+                onchange={handleAddOnQtyChange}
+              ></lightning-input>
+            </lightning-layout-item>
+            <lightning-layout-item size="4" padding="around-small">
+              <lightning-input
+                type="number"
+                label="Add'l Brands"
+                data-field="additionalBrands"
+                value={additionalBrands}
+                min="0"
+                step="1"
+                onchange={handleAddOnQtyChange}
+              ></lightning-input>
+            </lightning-layout-item>
+          </lightning-layout>
+
+          <table
+            class="slds-table slds-table_bordered slds-table_cell-buffer slds-m-top_small"
+          >
+            <thead>
+              <tr class="slds-line-height_reset">
+                <th scope="col">Add-On</th>
+                <th scope="col">Qty</th>
+                <th scope="col">$/Loc/Mo</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template for:each={addOnsResult.lines} for:item="line">
+                <tr key={line.key}>
+                  <td>{line.label}</td>
+                  <td>{line.quantity}</td>
+                  <td>
+                    <lightning-formatted-number
+                      value={line.perLocPerMonth}
+                      format-style="currency"
+                      currency-code="USD"
+                    ></lightning-formatted-number>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+
+          <h3
+            class="slds-text-heading_small slds-m-top_medium slds-m-bottom_x-small"
+          >
+            AgentTrack (call center — select one)
+          </h3>
+          <lightning-layout multiple-rows="true">
+            <lightning-layout-item size="6" padding="around-small">
+              <lightning-combobox
+                data-id="agent-track-variant"
+                label="Variant"
+                value={agentTrackVariant}
+                options={agentTrackOptions}
+                onchange={handleAgentTrackVariantChange}
+              ></lightning-combobox>
+            </lightning-layout-item>
+            <lightning-layout-item size="6" padding="around-small">
+              <lightning-input
+                data-id="agent-count-input"
+                type="number"
+                label="Number of Agents"
+                value={agentCount}
+                min="0"
+                step="1"
+                disabled={agentTrackDisabled}
+                onchange={handleAgentCountChange}
+              ></lightning-input>
+            </lightning-layout-item>
+          </lightning-layout>
+          <p class="slds-m-top_x-small">
+            AgentTrack:
+            <lightning-formatted-number
+              value={callCenterResult.perLocPerMonth}
+              format-style="currency"
+              currency-code="USD"
+            ></lightning-formatted-number>
+            / Loc / Mo (<lightning-formatted-number
+              value={callCenterResult.annualTotal}
+              format-style="currency"
+              currency-code="USD"
+            ></lightning-formatted-number>
+            annual total)
+          </p>
+
+          <template if:false={isEnterprise}>
+            <div class="slds-box slds-theme_default slds-m-top_medium">
+              <h3 class="slds-text-heading_small slds-m-bottom_x-small">
+                List Price
+              </h3>
+              <lightning-layout multiple-rows="true">
+                <lightning-layout-item size="4" padding="around-small">
+                  <p class="slds-text-title">Per Location / Month</p>
+                  <p class="slds-text-heading_medium">
+                    <lightning-formatted-number
+                      value={listPricePerLocationPerMonth}
+                      format-style="currency"
+                      currency-code="USD"
+                    ></lightning-formatted-number>
+                  </p>
+                </lightning-layout-item>
+                <lightning-layout-item size="4" padding="around-small">
+                  <p class="slds-text-title">Monthly</p>
+                  <p class="slds-text-heading_medium">
+                    <lightning-formatted-number
+                      value={listMonthly}
+                      format-style="currency"
+                      currency-code="USD"
+                    ></lightning-formatted-number>
+                  </p>
+                </lightning-layout-item>
+                <lightning-layout-item size="4" padding="around-small">
+                  <p class="slds-text-title">Annual</p>
+                  <p class="slds-text-heading_medium">
+                    <lightning-formatted-number
+                      value={listAnnual}
+                      format-style="currency"
+                      currency-code="USD"
+                    ></lightning-formatted-number>
+                  </p>
+                </lightning-layout-item>
+              </lightning-layout>
+
+              <div
+                class="slds-text-body_small slds-m-top_small slds-m-bottom_small"
+              >
+                <strong>Discount guidance:</strong> {discountGuidance}
+              </div>
+
+              <lightning-input
+                data-id="discount-input"
+                type="number"
+                label="Modeled discount %"
+                value={discountPercent}
+                min="0"
+                max="100"
+                step="1"
+                onchange={handleDiscountChange}
+                class="slds-m-bottom_small"
+              ></lightning-input>
+
+              <template if:true={hasDiscount}>
+                <lightning-layout multiple-rows="true">
+                  <lightning-layout-item size="4" padding="around-small">
+                    <p class="slds-text-title">Discounted / Loc / Mo</p>
+                    <p class="slds-text-heading_small">
+                      <lightning-formatted-number
+                        value={discountedPerLocationPerMonth}
+                        format-style="currency"
+                        currency-code="USD"
+                      ></lightning-formatted-number>
+                    </p>
+                  </lightning-layout-item>
+                  <lightning-layout-item size="4" padding="around-small">
+                    <p class="slds-text-title">Discounted Monthly</p>
+                    <p class="slds-text-heading_small">
+                      <lightning-formatted-number
+                        value={discountedMonthly}
+                        format-style="currency"
+                        currency-code="USD"
+                      ></lightning-formatted-number>
+                    </p>
+                  </lightning-layout-item>
+                  <lightning-layout-item size="4" padding="around-small">
+                    <p class="slds-text-title">Discounted Annual</p>
+                    <p class="slds-text-heading_small">
+                      <lightning-formatted-number
+                        value={discountedAnnual}
+                        format-style="currency"
+                        currency-code="USD"
+                      ></lightning-formatted-number>
+                    </p>
+                  </lightning-layout-item>
+                </lightning-layout>
+              </template>
+            </div>
+          </template>
+        </lightning-tab>
+
+        <!-- ============ RATINGS & REVIEWS ============ -->
+        <lightning-tab label="Ratings & Reviews">
+          <lightning-input
+            data-id="rr-toggle"
+            type="checkbox"
+            label="Include Ratings & Reviews"
+            checked={ratingsReviewsEnabled}
+            onchange={handleRatingsReviewsToggle}
+            class="slds-m-bottom_small"
+          ></lightning-input>
+
+          <lightning-radio-group
+            data-id="rr-tier-radio-group"
+            label="Product Tier"
+            options={ratingsReviewsTierOptions}
+            value={ratingsReviewsTier}
+            disabled={ratingsReviewsDisabled}
+            onchange={handleRatingsReviewsTierChange}
+            class="slds-m-bottom_medium"
+          ></lightning-radio-group>
+
+          <template if:true={ratingsReviewsResult}>
+            <div class="slds-box slds-theme_default">
+              <p>
+                Bracket:
+                <strong>{ratingsReviewsResult.bracket}</strong> locations
+              </p>
+              <lightning-layout multiple-rows="true">
+                <lightning-layout-item size="4" padding="around-small">
+                  <p class="slds-text-title">Rate / Loc / Mo</p>
+                  <p class="slds-text-heading_small">
+                    <lightning-formatted-number
+                      value={ratingsReviewsResult.ratePerMonth}
+                      format-style="currency"
+                      currency-code="USD"
+                    ></lightning-formatted-number>
+                  </p>
+                </lightning-layout-item>
+                <lightning-layout-item size="4" padding="around-small">
+                  <p class="slds-text-title">Monthly</p>
+                  <p class="slds-text-heading_small">
+                    <lightning-formatted-number
+                      value={ratingsReviewsResult.monthly}
+                      format-style="currency"
+                      currency-code="USD"
+                    ></lightning-formatted-number>
+                  </p>
+                </lightning-layout-item>
+                <lightning-layout-item size="4" padding="around-small">
+                  <p class="slds-text-title">Annual</p>
+                  <p class="slds-text-heading_small">
+                    <lightning-formatted-number
+                      value={ratingsReviewsResult.annual}
+                      format-style="currency"
+                      currency-code="USD"
+                    ></lightning-formatted-number>
+                  </p>
+                </lightning-layout-item>
+              </lightning-layout>
+            </div>
+          </template>
+
+          <h3
+            class="slds-text-heading_small slds-m-top_large slds-m-bottom_x-small"
+          >
+            Managed Listing Management — Reference Pricing ($/Loc/Mo)
+          </h3>
+          <p class="slds-text-body_small slds-m-bottom_x-small">
+            Reference only — not wired into the calculator above. The source
+            spreadsheet's column layout for this block (ChatExec / Local Pages
+            breakpoints) is ambiguous; confirm with the model owner before
+            quoting off these figures.
+          </p>
+          <table class="slds-table slds-table_bordered slds-table_cell-buffer">
+            <thead>
+              <tr class="slds-line-height_reset">
+                <th scope="col">Locations</th>
+                <th scope="col">Premium</th>
+                <th scope="col">Pro</th>
+                <th scope="col">Basic</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template
+                for:each={managedListingManagementReference}
+                for:item="row"
+              >
+                <tr key={row.locations}>
+                  <td>{row.locations}</td>
+                  <td>
+                    <lightning-formatted-number
+                      value={row.premium}
+                      format-style="currency"
+                      currency-code="USD"
+                    ></lightning-formatted-number>
+                  </td>
+                  <td>
+                    <lightning-formatted-number
+                      value={row.pro}
+                      format-style="currency"
+                      currency-code="USD"
+                    ></lightning-formatted-number>
+                  </td>
+                  <td>
+                    <lightning-formatted-number
+                      value={row.basic}
+                      format-style="currency"
+                      currency-code="USD"
+                    ></lightning-formatted-number>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </lightning-tab>
+
+        <!-- ============ ENTERPRISE ============ -->
+        <lightning-tab label="Enterprise (1,250+)">
+          <p class="slds-text-body_small slds-m-bottom_small">
+            Uses the Locations count and Add-Ons entered on the Quote Builder
+            tab, and the Ratings & Reviews selection from the tab above.
+          </p>
+
+          <lightning-input
+            data-id="website-survey-toggle"
+            type="checkbox"
+            label="Website survey needed (Contact Us)? — adds a flat $30,000/yr estimate"
+            checked={websiteSurveyNeeded}
+            onchange={handleWebsiteSurveyToggle}
+            class="slds-m-bottom_medium"
+          ></lightning-input>
+
+          <lightning-radio-group
+            data-id="enterprise-service-level-radio-group"
+            label="Service Level (used as the final quoted value)"
+            options={enterpriseServiceLevelOptions}
+            value={enterpriseServiceLevel}
+            onchange={handleEnterpriseServiceLevelChange}
+            class="slds-m-bottom_medium"
+          ></lightning-radio-group>
+
+          <table class="slds-table slds-table_bordered slds-table_cell-buffer">
+            <thead>
+              <tr class="slds-line-height_reset">
+                <th scope="col">Service Level</th>
+                <th scope="col">Annual $</th>
+                <th scope="col">Blended $/Loc/Mo</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Foundational</td>
+                <td>
+                  <lightning-formatted-number
+                    value={enterpriseQuote.foundational.annual}
+                    format-style="currency"
+                    currency-code="USD"
+                  ></lightning-formatted-number>
+                </td>
+                <td>
+                  <lightning-formatted-number
+                    value={enterpriseQuote.foundational.perLocPerMonth}
+                    format-style="currency"
+                    currency-code="USD"
+                  ></lightning-formatted-number>
+                </td>
+              </tr>
+              <tr>
+                <td>Advanced (+25%)</td>
+                <td>
+                  <lightning-formatted-number
+                    value={enterpriseQuote.advanced.annual}
+                    format-style="currency"
+                    currency-code="USD"
+                  ></lightning-formatted-number>
+                </td>
+                <td>
+                  <lightning-formatted-number
+                    value={enterpriseQuote.advanced.perLocPerMonth}
+                    format-style="currency"
+                    currency-code="USD"
+                  ></lightning-formatted-number>
+                </td>
+              </tr>
+              <tr>
+                <td>Elite (+30% over Advanced)</td>
+                <td>
+                  <lightning-formatted-number
+                    value={enterpriseQuote.elite.annual}
+                    format-style="currency"
+                    currency-code="USD"
+                  ></lightning-formatted-number>
+                </td>
+                <td>
+                  <lightning-formatted-number
+                    value={enterpriseQuote.elite.perLocPerMonth}
+                    format-style="currency"
+                    currency-code="USD"
+                  ></lightning-formatted-number>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h3
+            class="slds-text-heading_small slds-m-top_medium slds-m-bottom_x-small"
+          >
+            Foundational Breakdown
+          </h3>
+          <table class="slds-table slds-table_bordered slds-table_cell-buffer">
+            <tbody>
+              <tr>
+                <td>Location Survey ($17/loc/mo)</td>
+                <td>
+                  <lightning-formatted-number
+                    value={enterpriseQuote.locationSurveyAnnual}
+                    format-style="currency"
+                    currency-code="USD"
+                  ></lightning-formatted-number>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  Add-Ons (languages, surveys, revisions, integrations, brands)
+                </td>
+                <td>
+                  <lightning-formatted-number
+                    value={enterpriseQuote.addOns.annualTotal}
+                    format-style="currency"
+                    currency-code="USD"
+                  ></lightning-formatted-number>
+                </td>
+              </tr>
+              <tr>
+                <td>Website Survey</td>
+                <td>
+                  <lightning-formatted-number
+                    value={enterpriseQuote.websiteSurveyAnnual}
+                    format-style="currency"
+                    currency-code="USD"
+                  ></lightning-formatted-number>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </lightning-tab>
+
+        <!-- ============ DISCOVERY GUIDE ============ -->
+        <lightning-tab label="Discovery Guide">
+          <h3 class="slds-text-heading_small slds-m-bottom_x-small">
+            Must-haves the sellers need to know before quoting
+          </h3>
+          <ul class="slds-list_dotted slds-m-bottom_medium">
+            <li>Locations (e.g. 2,500)</li>
+            <li>Brands (e.g. 2 brands)</li>
+            <li>Additional integrations (each way) — 4 standard included</li>
+            <li>Languages — English &amp; Spanish included</li>
+            <li>Additional surveys</li>
+            <li>Ratings & Reviews needed?</li>
+            <li>Google-only, or more directories needed?</li>
+            <li>Responses to reviews needed, or simply visibility to data?</li>
+            <li>
+              Any managed services for Ratings needed (listings management,
+              white-glove responses)?
+            </li>
+            <li>Website survey needed (Contact Us)?</li>
+            <li>Do they have a customer community today?</li>
+            <li>
+              Are communities specifically requested (vs. "nice to have")?
+            </li>
+            <li>Do they have an EX program today?</li>
+            <li>Is EX specifically requested (vs. "nice to have")?</li>
+          </ul>
+
+          <h3 class="slds-text-heading_small slds-m-bottom_x-small">
+            Suggested Packages
+          </h3>
+
+          <div class="slds-box slds-m-bottom_small">
+            <h4 class="slds-text-heading_x-small">Ignite (Standard)</h4>
+            <ul class="slds-list_dotted">
+              <li>Location survey</li>
+              <li>
+                Google-only ratings (ingestion of data only, no responses)
+              </li>
+              <li>Case management</li>
+            </ul>
+          </div>
+
+          <div class="slds-box slds-m-bottom_small">
+            <h4 class="slds-text-heading_x-small">Ignite (Plus)</h4>
+            <p class="slds-text-body_small">Everything from Standard, plus:</p>
+            <ul class="slds-list_dotted">
+              <li>Response management for Ratings & Reviews</li>
+              <li>Ignite Digital</li>
+              <li>Ignite Community x1 (field intel OR customer)</li>
+            </ul>
+          </div>
+
+          <div class="slds-box slds-m-bottom_small">
+            <h4 class="slds-text-heading_x-small">Ignite (Enterprise)</h4>
+            <p class="slds-text-body_small">Everything from Plus, plus:</p>
+            <ul class="slds-list_dotted">
+              <li>Ignite EX</li>
+              <li>Up to 4 communities</li>
+              <li>Additional directories of Ratings & Reviews</li>
+            </ul>
+          </div>
+
+          <div class="slds-box slds-m-bottom_small">
+            <h4 class="slds-text-heading_x-small">Ignite (Managed)</h4>
+            <p class="slds-text-body_small">
+              Everything from Enterprise, plus:
+            </p>
+            <ul class="slds-list_dotted">
+              <li>Listings management</li>
+              <li>White glove responses</li>
+              <li>Additional directories of Ratings & Reviews</li>
+            </ul>
+          </div>
+        </lightning-tab>
+      </lightning-tabset>
+
+      <div
+        class="slds-box slds-theme_shade slds-m-top_medium slds-grid slds-grid_align-spread slds-grid_vertical-align-center slds-wrap"
+      >
+        <div>
+          <p class="slds-text-title">Final Quoted Amount (Annual)</p>
+          <p class="slds-text-heading_medium">
+            <lightning-formatted-number
+              value={finalAmount}
+              format-style="currency"
+              currency-code="USD"
+            ></lightning-formatted-number>
+          </p>
+        </div>
+        <lightning-button
+          data-id="add-products-button"
+          variant="brand"
+          label="Add Products to Opportunity"
+          disabled={addProductsDisabled}
+          onclick={handleAddProductsToOpportunity}
+        ></lightning-button>
+      </div>
+    </div>
+  </lightning-card>
+</template>
