@@ -1,5 +1,5 @@
 public with sharing class PricingToolController {
-  private static final String PRICEBOOK_NAME = "SMG Price Book";
+  private static final String PRICEBOOK_NAME = 'SMG Price Book';
 
   public class LineItemRequest {
     @AuraEnabled
@@ -22,11 +22,18 @@ public with sharing class PricingToolController {
   @AuraEnabled
   public static SyncResult syncLineItems(
     Id opportunityId,
-    List<LineItemRequest> lineItems
+    String lineItemsJson,
+    Double ratePerLocation
   ) {
     try {
-      if (lineItems == null || lineItems.isEmpty()) {
-        throwError("No pricing selections to add.");
+      List<LineItemRequest> lineItems = String.isBlank(lineItemsJson)
+        ? new List<LineItemRequest>()
+        : (List<LineItemRequest>) JSON.deserialize(
+            lineItemsJson,
+            List<LineItemRequest>.class
+          );
+      if (lineItems.isEmpty()) {
+        throwError('No pricing selections to add.');
       }
 
       List<Pricebook2> pricebooks = [
@@ -48,16 +55,9 @@ public with sharing class PricingToolController {
         WHERE Id = :opportunityId
         LIMIT 1
       ];
-      if (opp.Pricebook2Id == null) {
-        opp.Pricebook2Id = pricebookId;
-        update opp;
-      } else if (opp.Pricebook2Id != pricebookId) {
-        throwError(
-          "This Opportunity is on a different Price Book. Switch its Price Book to \"" +
-            PRICEBOOK_NAME +
-            "\" before adding pricing tool products."
-        );
-      }
+      opp.Pricebook2Id = pricebookId;
+      opp.Rate_per_Location__c = ratePerLocation;
+      update opp;
 
       Set<String> productCodes = new Set<String>();
       for (LineItemRequest item : lineItems) {
@@ -91,7 +91,7 @@ public with sharing class PricingToolController {
               item.productCode +
               '" on ' +
               PRICEBOOK_NAME +
-              "."
+              '.'
           );
         }
         OpportunityLineItem lineItem = new OpportunityLineItem();
@@ -121,7 +121,7 @@ public with sharing class PricingToolController {
     } catch (AuraHandledException e) {
       throw e;
     } catch (Exception e) {
-      throwError("Failed to sync products: " + e.getMessage());
+      throwError('Failed to sync products: ' + e.getMessage());
       return null;
     }
   }

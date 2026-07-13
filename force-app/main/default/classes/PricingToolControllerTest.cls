@@ -12,7 +12,7 @@ private class PricingToolControllerTest {
 
   private static Pricebook2 createSmgPricebook() {
     Pricebook2 pricebook = new Pricebook2(
-      Name = "SMG Price Book",
+      Name = 'SMG Price Book',
       IsActive = true
     );
     insert pricebook;
@@ -48,8 +48,8 @@ private class PricingToolControllerTest {
 
   private static Opportunity createOpportunity() {
     Opportunity opp = new Opportunity(
-      Name = "Test Opp",
-      StageName = "Prospecting",
+      Name = 'Test Opp',
+      StageName = 'Prospecting',
       CloseDate = Date.today().addMonths(1)
     );
     insert opp;
@@ -58,22 +58,23 @@ private class PricingToolControllerTest {
 
   @isTest
   static void syncLineItems_assignsPricebookAndInsertsLines() {
-    Product2 product = createProduct("BASE-STD-FOUND");
+    Product2 product = createProduct('BASE-STD-FOUND');
     createStandardPricebookEntry(product.Id, 100);
     Pricebook2 smgPricebook = createSmgPricebook();
     createPricebookEntry(smgPricebook.Id, product.Id, 100);
     Opportunity opp = createOpportunity();
 
     PricingToolController.LineItemRequest request = new PricingToolController.LineItemRequest();
-    request.productCode = "BASE-STD-FOUND";
+    request.productCode = 'BASE-STD-FOUND';
     request.quantity = 1;
     request.unitPrice = 60000;
-    request.description = "100 locations";
+    request.description = '100 locations';
 
     Test.startTest();
     PricingToolController.SyncResult result = PricingToolController.syncLineItems(
       opp.Id,
-      new List<PricingToolController.LineItemRequest>{ request }
+      JSON.serialize(new List<PricingToolController.LineItemRequest>{ request }),
+      50
     );
     Test.stopTest();
 
@@ -81,11 +82,12 @@ private class PricingToolControllerTest {
     System.assertEquals(60000, result.totalAmount);
 
     Opportunity updatedOpp = [
-      SELECT Pricebook2Id
+      SELECT Pricebook2Id, Rate_per_Location__c
       FROM Opportunity
       WHERE Id = :opp.Id
     ];
     System.assertEquals(smgPricebook.Id, updatedOpp.Pricebook2Id);
+    System.assertEquals(50, updatedOpp.Rate_per_Location__c);
 
     List<OpportunityLineItem> lines = [
       SELECT Id, UnitPrice, Quantity
@@ -98,31 +100,33 @@ private class PricingToolControllerTest {
 
   @isTest
   static void syncLineItems_rerunReplacesPriorLines() {
-    Product2 product = createProduct("BASE-STD-FOUND");
+    Product2 product = createProduct('BASE-STD-FOUND');
     createStandardPricebookEntry(product.Id, 100);
     Pricebook2 smgPricebook = createSmgPricebook();
     createPricebookEntry(smgPricebook.Id, product.Id, 100);
     Opportunity opp = createOpportunity();
 
     PricingToolController.LineItemRequest firstRequest = new PricingToolController.LineItemRequest();
-    firstRequest.productCode = "BASE-STD-FOUND";
+    firstRequest.productCode = 'BASE-STD-FOUND';
     firstRequest.quantity = 1;
     firstRequest.unitPrice = 60000;
 
     PricingToolController.syncLineItems(
       opp.Id,
-      new List<PricingToolController.LineItemRequest>{ firstRequest }
+      JSON.serialize(new List<PricingToolController.LineItemRequest>{ firstRequest }),
+      50
     );
 
     PricingToolController.LineItemRequest secondRequest = new PricingToolController.LineItemRequest();
-    secondRequest.productCode = "BASE-STD-FOUND";
+    secondRequest.productCode = 'BASE-STD-FOUND';
     secondRequest.quantity = 1;
     secondRequest.unitPrice = 90000;
 
     Test.startTest();
     PricingToolController.syncLineItems(
       opp.Id,
-      new List<PricingToolController.LineItemRequest>{ secondRequest }
+      JSON.serialize(new List<PricingToolController.LineItemRequest>{ secondRequest }),
+      75
     );
     Test.stopTest();
 
@@ -143,7 +147,8 @@ private class PricingToolControllerTest {
     try {
       PricingToolController.syncLineItems(
         opp.Id,
-        new List<PricingToolController.LineItemRequest>()
+        JSON.serialize(new List<PricingToolController.LineItemRequest>()),
+        50
       );
     } catch (AuraHandledException e) {
       threw = true;
@@ -156,7 +161,7 @@ private class PricingToolControllerTest {
     Opportunity opp = createOpportunity();
 
     PricingToolController.LineItemRequest request = new PricingToolController.LineItemRequest();
-    request.productCode = "BASE-STD-FOUND";
+    request.productCode = 'BASE-STD-FOUND';
     request.quantity = 1;
     request.unitPrice = 60000;
 
@@ -164,7 +169,8 @@ private class PricingToolControllerTest {
     try {
       PricingToolController.syncLineItems(
         opp.Id,
-        new List<PricingToolController.LineItemRequest>{ request }
+        JSON.serialize(new List<PricingToolController.LineItemRequest>{ request }),
+        50
       );
     } catch (AuraHandledException e) {
       threw = true;
@@ -173,17 +179,27 @@ private class PricingToolControllerTest {
   }
 
   @isTest
-  static void syncLineItems_wrongExistingPricebook_throwsError() {
-    Product2 product = createProduct("BASE-STD-FOUND");
-    createStandardPricebookEntry(product.Id, 100);
+  static void syncLineItems_opportunityAlreadyHasProductsFromAnotherPricebook_throwsError() {
+    Product2 product = createProduct('BASE-STD-FOUND');
+    Id standardEntryId = createPricebookEntry(
+      Test.getStandardPricebookId(),
+      product.Id,
+      100
+    );
     createSmgPricebook();
 
     Opportunity opp = createOpportunity();
     opp.Pricebook2Id = Test.getStandardPricebookId();
     update opp;
+    insert new OpportunityLineItem(
+      OpportunityId = opp.Id,
+      PricebookEntryId = standardEntryId,
+      Quantity = 1,
+      UnitPrice = 100
+    );
 
     PricingToolController.LineItemRequest request = new PricingToolController.LineItemRequest();
-    request.productCode = "BASE-STD-FOUND";
+    request.productCode = 'BASE-STD-FOUND';
     request.quantity = 1;
     request.unitPrice = 60000;
 
@@ -191,7 +207,8 @@ private class PricingToolControllerTest {
     try {
       PricingToolController.syncLineItems(
         opp.Id,
-        new List<PricingToolController.LineItemRequest>{ request }
+        JSON.serialize(new List<PricingToolController.LineItemRequest>{ request }),
+        50
       );
     } catch (AuraHandledException e) {
       threw = true;
@@ -201,14 +218,14 @@ private class PricingToolControllerTest {
 
   @isTest
   static void syncLineItems_unknownProductCode_throwsError() {
-    Product2 product = createProduct("BASE-STD-FOUND");
+    Product2 product = createProduct('BASE-STD-FOUND');
     createStandardPricebookEntry(product.Id, 100);
     Pricebook2 smgPricebook = createSmgPricebook();
     createPricebookEntry(smgPricebook.Id, product.Id, 100);
     Opportunity opp = createOpportunity();
 
     PricingToolController.LineItemRequest request = new PricingToolController.LineItemRequest();
-    request.productCode = "NOT-A-REAL-CODE";
+    request.productCode = 'NOT-A-REAL-CODE';
     request.quantity = 1;
     request.unitPrice = 60000;
 
@@ -216,7 +233,8 @@ private class PricingToolControllerTest {
     try {
       PricingToolController.syncLineItems(
         opp.Id,
-        new List<PricingToolController.LineItemRequest>{ request }
+        JSON.serialize(new List<PricingToolController.LineItemRequest>{ request }),
+        50
       );
     } catch (AuraHandledException e) {
       threw = true;

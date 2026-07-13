@@ -1,5 +1,6 @@
 import { LightningElement, api } from "lwc";
 import { ShowToastEvent } from "lightning/platformShowToastEvent";
+import { RefreshEvent } from "lightning/refresh";
 import syncLineItems from "@salesforce/apex/PricingToolController.syncLineItems";
 import {
   PLANS,
@@ -241,6 +242,15 @@ export default class PricingTool extends LightningElement {
     return this.hasDiscount ? this.discountedAnnual : this.listAnnual;
   }
 
+  get finalRatePerLocationPerMonth() {
+    if (this.isEnterprise) {
+      return this.enterpriseQuote[this.enterpriseServiceLevel].perLocPerMonth;
+    }
+    return this.hasDiscount
+      ? this.discountedPerLocationPerMonth
+      : this.listPricePerLocationPerMonth;
+  }
+
   get addProductsDisabled() {
     return (
       this.isSyncingProducts || !this.recordId || !(this.finalAmount > 0)
@@ -389,11 +399,25 @@ export default class PricingTool extends LightningElement {
   }
 
   async handleAddProductsToOpportunity() {
+    const lineItems = this.lineItemRequests;
+    const unmapped = lineItems.find((line) => !line.productCode);
+    if (unmapped) {
+      this.dispatchEvent(
+        new ShowToastEvent({
+          title: "Missing product mapping",
+          message: `No product code is configured for this line: ${unmapped.description}`,
+          variant: "error"
+        })
+      );
+      return;
+    }
+
     this.isSyncingProducts = true;
     try {
       const result = await syncLineItems({
         opportunityId: this.recordId,
-        lineItems: this.lineItemRequests
+        lineItemsJson: JSON.stringify(lineItems),
+        ratePerLocation: this.finalRatePerLocationPerMonth
       });
       this.dispatchEvent(
         new ShowToastEvent({
@@ -402,6 +426,7 @@ export default class PricingTool extends LightningElement {
           variant: "success"
         })
       );
+      this.dispatchEvent(new RefreshEvent());
     } catch (error) {
       this.dispatchEvent(
         new ShowToastEvent({
