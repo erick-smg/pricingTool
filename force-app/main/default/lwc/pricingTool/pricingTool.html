@@ -13,7 +13,29 @@
             onchange={handleLocationsChange}
           ></lightning-input>
         </lightning-layout-item>
+        <lightning-layout-item size="4" padding="around-small">
+          <lightning-combobox
+            data-id="package-combobox"
+            label="Package"
+            value={selectedPackage}
+            options={packageOptions}
+            onchange={handlePackageChange}
+          ></lightning-combobox>
+        </lightning-layout-item>
       </lightning-layout>
+
+      <template if:true={selectedPackage}>
+        <div
+          class="slds-text-body_small slds-m-bottom_small"
+          style="color: #706e6b"
+        >
+          Pre-filled the Plan, Ratings & Reviews tier, Ignite CX, Ignite EX,
+          Ignite Communities, and Ignite Digital below as a starting point —
+          adjust freely. Ignite EX, Ignite Communities, and Ignite Digital
+          have no pricing yet (shown as $0 placeholders). Case management
+          isn't wired into pricing at all; see the Discovery Guide tab.
+        </div>
+      </template>
 
       <template if:true={isEnterprise}>
         <div
@@ -37,64 +59,6 @@
             onchange={handlePlanChange}
             class="slds-m-bottom_medium"
           ></lightning-combobox>
-
-          <template if:false={isEnterprise}>
-            <h3 class="slds-text-heading_small slds-m-bottom_x-small">
-              Base Package — Volume Tiers
-            </h3>
-            <table
-              class="slds-table slds-table_bordered slds-table_cell-buffer"
-            >
-              <thead>
-                <tr class="slds-line-height_reset">
-                  <th scope="col">Tier</th>
-                  <th scope="col">Locations</th>
-                  <th scope="col">Rate / Mo</th>
-                  <th scope="col">Monthly $</th>
-                  <th scope="col">Annual $</th>
-                  <th scope="col">Est. GM%</th>
-                </tr>
-              </thead>
-              <tbody>
-                <template for:each={baseQuote.buckets} for:item="bucket">
-                  <tr key={bucket.label}>
-                    <td>{bucket.label}</td>
-                    <td>{bucket.locationsInBucket}</td>
-                    <td>
-                      <lightning-formatted-number
-                        value={bucket.ratePerMonth}
-                        format-style="currency"
-                        currency-code="USD"
-                      ></lightning-formatted-number>
-                    </td>
-                    <td>
-                      <lightning-formatted-number
-                        value={bucket.monthly}
-                        format-style="currency"
-                        currency-code="USD"
-                      ></lightning-formatted-number>
-                    </td>
-                    <td>
-                      <lightning-formatted-number
-                        value={bucket.annual}
-                        format-style="currency"
-                        currency-code="USD"
-                      ></lightning-formatted-number>
-                    </td>
-                    <td>
-                      <template if:true={bucket.gmPercent}>
-                        <lightning-formatted-number
-                          value={bucket.gmPercent}
-                          format-style="percent"
-                          maximum-fraction-digits="1"
-                        ></lightning-formatted-number>
-                      </template>
-                    </td>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
-          </template>
 
           <h3
             class="slds-text-heading_small slds-m-top_medium slds-m-bottom_x-small"
@@ -229,6 +193,65 @@
             annual total)
           </p>
 
+          <h3
+            class="slds-text-heading_small slds-m-top_medium slds-m-bottom_x-small"
+          >
+            Ignite Add-Ons
+          </h3>
+          <lightning-layout multiple-rows="true">
+            <lightning-layout-item size="4" padding="around-small">
+              <lightning-input
+                data-id="ignite-cx-toggle"
+                type="checkbox"
+                label="Ignite CX (Location Survey)"
+                checked={igniteCxDisplayChecked}
+                disabled={isEnterprise}
+                onchange={handleIgniteCxToggle}
+              ></lightning-input>
+              <template if:true={isEnterprise}>
+                <p class="slds-text-body_small">
+                  Always included above 1,250 locations.
+                </p>
+              </template>
+            </lightning-layout-item>
+            <lightning-layout-item size="4" padding="around-small">
+              <lightning-input
+                data-id="ignite-ex-toggle"
+                type="checkbox"
+                label="Ignite EX (price TBD)"
+                checked={igniteExEnabled}
+                onchange={handleIgniteExToggle}
+              ></lightning-input>
+            </lightning-layout-item>
+            <lightning-layout-item size="4" padding="around-small">
+              <lightning-input
+                data-id="ignite-communities-toggle"
+                type="checkbox"
+                label="Ignite Communities (price TBD)"
+                checked={igniteCommunitiesEnabled}
+                onchange={handleIgniteCommunitiesToggle}
+              ></lightning-input>
+            </lightning-layout-item>
+            <lightning-layout-item size="4" padding="around-small">
+              <lightning-input
+                data-id="ignite-digital-toggle"
+                type="checkbox"
+                label="Ignite Digital (price TBD)"
+                checked={igniteDigitalEnabled}
+                onchange={handleIgniteDigitalToggle}
+              ></lightning-input>
+            </lightning-layout-item>
+            <lightning-layout-item size="4" padding="around-small">
+              <lightning-input
+                data-id="setup-fee-toggle"
+                type="checkbox"
+                label="One-Time Setup Fee ($10,000)"
+                checked={setupFeeEnabled}
+                onchange={handleSetupFeeToggle}
+              ></lightning-input>
+            </lightning-layout-item>
+          </lightning-layout>
+
           <template if:false={isEnterprise}>
             <div class="slds-box slds-theme_default slds-m-top_medium">
               <h3 class="slds-text-heading_small slds-m-bottom_x-small">
@@ -276,10 +299,10 @@
               <lightning-input
                 data-id="discount-input"
                 type="number"
-                label="Modeled discount %"
+                label="Modeled discount % (max 10%)"
                 value={discountPercent}
                 min="0"
-                max="100"
+                max="10"
                 step="1"
                 onchange={handleDiscountChange}
                 class="slds-m-bottom_small"
@@ -598,8 +621,18 @@
           </ul>
 
           <h3 class="slds-text-heading_small slds-m-bottom_x-small">
-            Suggested Packages
+            Packages
           </h3>
+          <p class="slds-text-body_small slds-m-bottom_small">
+            Selecting a package from the "Package" dropdown at the top of
+            this tool pre-fills the Plan, Ratings & Reviews tier, Ignite CX,
+            Ignite EX, Ignite Communities, and Ignite Digital below — that
+            Plan mapping is a first guess (there's no exact 1:1 match to
+            these 4 packages) and should be reviewed, not treated as final.
+            Ignite EX, Ignite Communities, and Ignite Digital have no
+            pricing yet (shown as $0 placeholders). Case management isn't
+            wired into pricing anywhere in this tool yet.
+          </p>
 
           <div class="slds-box slds-m-bottom_small">
             <h4 class="slds-text-heading_x-small">Ignite (Standard)</h4>
@@ -658,6 +691,11 @@
               currency-code="USD"
             ></lightning-formatted-number>
           </p>
+          <template if:true={setupFeeEnabled}>
+            <p class="slds-text-body_small">
+              + $10,000 one-time setup fee (not included above)
+            </p>
+          </template>
         </div>
         <lightning-button
           data-id="add-products-button"

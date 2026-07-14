@@ -1,11 +1,13 @@
-import { LightningElement, api } from "lwc";
+import { LightningElement, api, wire } from "lwc";
 import { ShowToastEvent } from "lightning/platformShowToastEvent";
 import { RefreshEvent } from "lightning/refresh";
+import { getRecord, getFieldValue } from "lightning/uiRecordApi";
+import OPPORTUNITY_TYPE_FIELD from "@salesforce/schema/Opportunity.Type";
 import syncLineItems from "@salesforce/apex/PricingToolController.syncLineItems";
 import {
   PLANS,
   ENTERPRISE_LOCATION_THRESHOLD,
-  AGENT_TRACK_VARIANTS,
+  ENTERPRISE,
   RATINGS_REVIEWS_TIER_KEYS,
   RATINGS_REVIEWS_TIER_LABELS,
   MANAGED_LISTING_MANAGEMENT_REFERENCE,
@@ -19,9 +21,7 @@ import {
 
 const AGENT_TRACK_LABELS = {
   none: "None",
-  web: "Web Only",
-  ivr: "IVR Only",
-  webIvr: "Web + IVR"
+  web: "Web Only"
 };
 
 function round2(value) {
@@ -65,15 +65,71 @@ const RATINGS_REVIEWS_PRODUCT_CODES = {
   basic: "RR-BASIC"
 };
 
-const ENTERPRISE_LOCATION_SURVEY_PRODUCT_CODE = "ENT-LOC-SURVEY";
+// Product code unchanged in Salesforce - only the display name changed to "Ignite CX".
+const IGNITE_CX_PRODUCT_CODE = "ENT-LOC-SURVEY";
 const ENTERPRISE_WEBSITE_SURVEY_PRODUCT_CODE = "ENT-WEBSITE-SURVEY";
 const ENTERPRISE_TIER_PREMIUM_PRODUCT_CODE = "ENT-TIER-PREMIUM";
+
+const IGNITE_EX_PRODUCT_CODE = "IGNITE-EX";
+const IGNITE_COMMUNITIES_PRODUCT_CODE = "IGNITE-COMMUNITIES";
+const IGNITE_DIGITAL_PRODUCT_CODE = "IGNITE-DIGITAL";
+const SETUP_FEE_PRODUCT_CODE = "SETUP";
+const SETUP_FEE_AMOUNT = 10000;
+const NEW_LOGO_OPPORTUNITY_TYPE = "New Logo";
+const MAX_DISCOUNT_PERCENT = 10;
+
+// Packages (Discovery Guide tab) are the company's go-forward sales motion.
+// Plan-tier defaults below are a first-guess mapping onto the existing 6 Plans (there's no
+// 1:1 correspondence - 4 packages vs. 2 tracks x 3 tiers) and are meant to be adjusted by the
+// rep afterward, not treated as authoritative. Ratings & Reviews tier is an exact mapping.
+const PACKAGE_LABELS = {
+  igniteStandard: "Ignite (Standard)",
+  ignitePlus: "Ignite (Plus)",
+  igniteEnterprise: "Ignite (Enterprise)",
+  igniteManaged: "Ignite (Managed)"
+};
+
+const PACKAGE_DEFAULTS = {
+  igniteStandard: {
+    selectedPlan: "Standard Foundational",
+    ratingsReviewsTier: "basic",
+    igniteCxEnabled: true,
+    igniteExEnabled: false,
+    igniteCommunitiesEnabled: false,
+    igniteDigitalEnabled: false
+  },
+  ignitePlus: {
+    selectedPlan: "Standard Advanced",
+    ratingsReviewsTier: "pro",
+    igniteCxEnabled: true,
+    igniteExEnabled: false,
+    igniteCommunitiesEnabled: true,
+    igniteDigitalEnabled: true
+  },
+  igniteEnterprise: {
+    selectedPlan: "Standard Elite",
+    ratingsReviewsTier: "premium",
+    igniteCxEnabled: true,
+    igniteExEnabled: true,
+    igniteCommunitiesEnabled: true,
+    igniteDigitalEnabled: true
+  },
+  igniteManaged: {
+    selectedPlan: "Professional Elite",
+    ratingsReviewsTier: "premium",
+    igniteCxEnabled: true,
+    igniteExEnabled: true,
+    igniteCommunitiesEnabled: true,
+    igniteDigitalEnabled: true
+  }
+};
 
 export default class PricingTool extends LightningElement {
   @api recordId;
 
   locations = 100;
   selectedPlan = "Professional Foundational";
+  selectedPackage = "";
 
   additionalLanguages = 0;
   additionalSurveys = 0;
@@ -91,16 +147,43 @@ export default class PricingTool extends LightningElement {
   enterpriseServiceLevel = "foundational";
   discountPercent = 0;
 
+  igniteCxEnabled = false;
+  igniteExEnabled = false;
+  igniteCommunitiesEnabled = false;
+  igniteDigitalEnabled = false;
+  setupFeeEnabled = false;
+  setupFeeDefaultApplied = false;
+
   isSyncingProducts = false;
 
   managedListingManagementReference = MANAGED_LISTING_MANAGEMENT_REFERENCE;
+
+  @wire(getRecord, { recordId: "$recordId", fields: [OPPORTUNITY_TYPE_FIELD] })
+  wiredOpportunity({ data }) {
+    if (data && !this.setupFeeDefaultApplied) {
+      this.setupFeeDefaultApplied = true;
+      this.setupFeeEnabled =
+        getFieldValue(data, OPPORTUNITY_TYPE_FIELD) ===
+        NEW_LOGO_OPPORTUNITY_TYPE;
+    }
+  }
 
   get planOptions() {
     return PLANS.map((plan) => ({ label: plan, value: plan }));
   }
 
+  get packageOptions() {
+    return [
+      { label: "Custom (no package)", value: "" },
+      ...Object.keys(PACKAGE_LABELS).map((key) => ({
+        label: PACKAGE_LABELS[key],
+        value: key
+      }))
+    ];
+  }
+
   get agentTrackOptions() {
-    return ["none", ...AGENT_TRACK_VARIANTS].map((variant) => ({
+    return ["none", "web"].map((variant) => ({
       label: AGENT_TRACK_LABELS[variant],
       value: variant
     }));
@@ -123,6 +206,16 @@ export default class PricingTool extends LightningElement {
 
   get ratingsReviewsDisabled() {
     return !this.ratingsReviewsEnabled;
+  }
+
+  get igniteCxAnnual() {
+    return round2(
+      Number(this.locations) * ENTERPRISE.locationSurveyPricePerMonth * 12
+    );
+  }
+
+  get igniteCxDisplayChecked() {
+    return this.isEnterprise || this.igniteCxEnabled;
   }
 
   get baseQuote() {
@@ -274,12 +367,65 @@ export default class PricingTool extends LightningElement {
       }));
   }
 
+  buildCommonLineItems() {
+    const lines = [];
+
+    // Above 1,250 locations, the Enterprise branch already includes Ignite CX
+    // unconditionally (its own line, priced off the enterprise quote) - avoid double-adding it.
+    if (this.igniteCxEnabled && !this.isEnterprise) {
+      lines.push({
+        productCode: IGNITE_CX_PRODUCT_CODE,
+        quantity: 1,
+        unitPrice: this.applyDiscount(this.igniteCxAnnual),
+        description: `${this.locations} locations`
+      });
+    }
+
+    if (this.igniteExEnabled) {
+      lines.push({
+        productCode: IGNITE_EX_PRODUCT_CODE,
+        quantity: 1,
+        unitPrice: 0,
+        description: "Ignite EX (price TBD)"
+      });
+    }
+
+    if (this.igniteCommunitiesEnabled) {
+      lines.push({
+        productCode: IGNITE_COMMUNITIES_PRODUCT_CODE,
+        quantity: 1,
+        unitPrice: 0,
+        description: "Ignite Communities (price TBD)"
+      });
+    }
+
+    if (this.igniteDigitalEnabled) {
+      lines.push({
+        productCode: IGNITE_DIGITAL_PRODUCT_CODE,
+        quantity: 1,
+        unitPrice: 0,
+        description: "Ignite Digital (price TBD)"
+      });
+    }
+
+    if (this.setupFeeEnabled) {
+      lines.push({
+        productCode: SETUP_FEE_PRODUCT_CODE,
+        quantity: 1,
+        unitPrice: SETUP_FEE_AMOUNT,
+        description: "One-time setup fee"
+      });
+    }
+
+    return lines;
+  }
+
   get lineItemRequests() {
     if (this.isEnterprise) {
       const quote = this.enterpriseQuote;
       const lines = [
         {
-          productCode: ENTERPRISE_LOCATION_SURVEY_PRODUCT_CODE,
+          productCode: IGNITE_CX_PRODUCT_CODE,
           quantity: 1,
           unitPrice: quote.locationSurveyAnnual,
           description: `${this.locations} locations`
@@ -315,7 +461,7 @@ export default class PricingTool extends LightningElement {
         });
       }
 
-      return lines;
+      return [...lines, ...this.buildCommonLineItems()];
     }
 
     const lines = [
@@ -346,7 +492,7 @@ export default class PricingTool extends LightningElement {
       });
     }
 
-    return lines;
+    return [...lines, ...this.buildCommonLineItems()];
   }
 
   handleLocationsChange(event) {
@@ -356,6 +502,41 @@ export default class PricingTool extends LightningElement {
 
   handlePlanChange(event) {
     this.selectedPlan = event.detail.value;
+  }
+
+  handlePackageChange(event) {
+    const packageKey = event.detail.value;
+    this.selectedPackage = packageKey;
+    const defaults = PACKAGE_DEFAULTS[packageKey];
+    if (defaults) {
+      this.selectedPlan = defaults.selectedPlan;
+      this.ratingsReviewsEnabled = true;
+      this.ratingsReviewsTier = defaults.ratingsReviewsTier;
+      this.igniteCxEnabled = defaults.igniteCxEnabled;
+      this.igniteExEnabled = defaults.igniteExEnabled;
+      this.igniteCommunitiesEnabled = defaults.igniteCommunitiesEnabled;
+      this.igniteDigitalEnabled = defaults.igniteDigitalEnabled;
+    }
+  }
+
+  handleIgniteCxToggle(event) {
+    this.igniteCxEnabled = event.target.checked;
+  }
+
+  handleIgniteExToggle(event) {
+    this.igniteExEnabled = event.target.checked;
+  }
+
+  handleIgniteDigitalToggle(event) {
+    this.igniteDigitalEnabled = event.target.checked;
+  }
+
+  handleIgniteCommunitiesToggle(event) {
+    this.igniteCommunitiesEnabled = event.target.checked;
+  }
+
+  handleSetupFeeToggle(event) {
+    this.setupFeeEnabled = event.target.checked;
   }
 
   handleAddOnQtyChange(event) {
@@ -395,7 +576,9 @@ export default class PricingTool extends LightningElement {
   handleDiscountChange(event) {
     const value = Number(event.target.value);
     this.discountPercent =
-      Number.isFinite(value) && value >= 0 ? Math.min(value, 100) : 0;
+      Number.isFinite(value) && value >= 0
+        ? Math.min(value, MAX_DISCOUNT_PERCENT)
+        : 0;
   }
 
   async handleAddProductsToOpportunity() {
