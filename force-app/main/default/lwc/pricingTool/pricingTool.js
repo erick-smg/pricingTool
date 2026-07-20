@@ -6,16 +6,21 @@ import OPPORTUNITY_TYPE_FIELD from "@salesforce/schema/Opportunity.Type";
 import syncLineItems from "@salesforce/apex/PricingToolController.syncLineItems";
 import {
   PLANS,
-  ENTERPRISE_LOCATION_THRESHOLD,
-  ENTERPRISE,
+  TERM_OPTIONS,
   RATINGS_REVIEWS_TIER_KEYS,
   RATINGS_REVIEWS_TIER_LABELS,
   MANAGED_LISTING_MANAGEMENT_REFERENCE,
+  IGNITE_CX_RATE_PER_LOCATION_PER_MONTH,
+  CASE_MANAGEMENT_FEE,
+  COMMUNITY_TIERS,
+  COMMUNITY_TIER_SPECS,
   computeBaseQuote,
+  computeSetupFee,
+  computeThreeYearProjection,
   computeAddOns,
   computeCallCenter,
   computeRatingsReviews,
-  computeEnterpriseQuote,
+  computeCommunityQuote,
   getDiscountGuidance
 } from "c/pricingEngine";
 
@@ -28,20 +33,12 @@ function round2(value) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-const ENTERPRISE_SERVICE_LEVELS = ["foundational", "advanced", "elite"];
-const ENTERPRISE_SERVICE_LEVEL_LABELS = {
-  foundational: "Foundational",
-  advanced: "Advanced (+25%)",
-  elite: "Elite (+30% over Advanced)"
-};
-
 const BASE_PACKAGE_PRODUCT_CODES = {
-  "Standard Foundational": "BASE-STD-FOUND",
-  "Standard Advanced": "BASE-STD-ADV",
-  "Standard Elite": "BASE-STD-ELITE",
-  "Professional Foundational": "BASE-PRO-FOUND",
-  "Professional Advanced": "BASE-PRO-ADV",
-  "Professional Elite": "BASE-PRO-ELITE"
+  "Pro/Advanced": "BASE-PRO-ADV",
+  "Standard/Advanced": "BASE-STD-ADV",
+  "Pro/Foundational": "BASE-PRO-FOUND",
+  "Standard/Foundational": "BASE-STD-FOUND",
+  "Solution Support Only": "SOLUTION-SUPPORT"
 };
 
 const ADD_ON_PRODUCT_CODES = {
@@ -67,20 +64,17 @@ const RATINGS_REVIEWS_PRODUCT_CODES = {
 
 // Product code unchanged in Salesforce - only the display name changed to "Ignite CX".
 const IGNITE_CX_PRODUCT_CODE = "ENT-LOC-SURVEY";
-const ENTERPRISE_WEBSITE_SURVEY_PRODUCT_CODE = "ENT-WEBSITE-SURVEY";
-const ENTERPRISE_TIER_PREMIUM_PRODUCT_CODE = "ENT-TIER-PREMIUM";
-
 const IGNITE_EX_PRODUCT_CODE = "IGNITE-EX";
 const IGNITE_COMMUNITIES_PRODUCT_CODE = "IGNITE-COMMUNITIES";
 const IGNITE_DIGITAL_PRODUCT_CODE = "IGNITE-DIGITAL";
+const CASE_MANAGEMENT_PRODUCT_CODE = "CASE-MANAGEMENT";
 const SETUP_FEE_PRODUCT_CODE = "SETUP";
-const SETUP_FEE_AMOUNT = 10000;
 const NEW_LOGO_OPPORTUNITY_TYPE = "New Logo";
 const MAX_DISCOUNT_PERCENT = 10;
 
 // Packages (Discovery Guide tab) are the company's go-forward sales motion.
-// Plan-tier defaults below are a first-guess mapping onto the existing 6 Plans (there's no
-// 1:1 correspondence - 4 packages vs. 2 tracks x 3 tiers) and are meant to be adjusted by the
+// Plan defaults below are a first-guess mapping onto the new 5-plan rate card (there's no
+// exact 1:1 correspondence - 4 packages vs. 5 plans) and are meant to be adjusted by the
 // rep afterward, not treated as authoritative. Ratings & Reviews tier is an exact mapping.
 const PACKAGE_LABELS = {
   igniteStandard: "Ignite (Standard)",
@@ -91,7 +85,7 @@ const PACKAGE_LABELS = {
 
 const PACKAGE_DEFAULTS = {
   igniteStandard: {
-    selectedPlan: "Standard Foundational",
+    selectedPlan: "Standard/Foundational",
     ratingsReviewsTier: "basic",
     igniteCxEnabled: true,
     igniteExEnabled: false,
@@ -99,7 +93,7 @@ const PACKAGE_DEFAULTS = {
     igniteDigitalEnabled: false
   },
   ignitePlus: {
-    selectedPlan: "Standard Advanced",
+    selectedPlan: "Standard/Advanced",
     ratingsReviewsTier: "pro",
     igniteCxEnabled: true,
     igniteExEnabled: false,
@@ -107,7 +101,7 @@ const PACKAGE_DEFAULTS = {
     igniteDigitalEnabled: true
   },
   igniteEnterprise: {
-    selectedPlan: "Standard Elite",
+    selectedPlan: "Pro/Foundational",
     ratingsReviewsTier: "premium",
     igniteCxEnabled: true,
     igniteExEnabled: true,
@@ -115,7 +109,7 @@ const PACKAGE_DEFAULTS = {
     igniteDigitalEnabled: true
   },
   igniteManaged: {
-    selectedPlan: "Professional Elite",
+    selectedPlan: "Pro/Advanced",
     ratingsReviewsTier: "premium",
     igniteCxEnabled: true,
     igniteExEnabled: true,
@@ -127,9 +121,11 @@ const PACKAGE_DEFAULTS = {
 export default class PricingTool extends LightningElement {
   @api recordId;
 
-  locations = 100;
-  selectedPlan = "Professional Foundational";
+  locations = 0;
+  selectedPlan = "Pro/Advanced";
   selectedPackage = "";
+  termMonths = "36";
+  includeBaseSubscription = false;
 
   additionalLanguages = 0;
   additionalSurveys = 0;
@@ -143,16 +139,22 @@ export default class PricingTool extends LightningElement {
   ratingsReviewsEnabled = false;
   ratingsReviewsTier = "pro";
 
-  websiteSurveyNeeded = false;
-  enterpriseServiceLevel = "foundational";
   discountPercent = 0;
 
   igniteCxEnabled = false;
   igniteExEnabled = false;
   igniteCommunitiesEnabled = false;
   igniteDigitalEnabled = false;
+  caseManagementEnabled = false;
   setupFeeEnabled = false;
   setupFeeDefaultApplied = false;
+
+  communityTier = "DIY";
+  communityMarkets = 1;
+  communitySizePerMarket = COMMUNITY_TIER_SPECS.DIY.includedCommunitySize;
+  communityAdditionalAgileProjects = 0;
+  communityAdditionalConsultancyProjects = 0;
+  communityAdditionalAdminUsers = 0;
 
   isSyncingProducts = false;
 
@@ -182,6 +184,20 @@ export default class PricingTool extends LightningElement {
     ];
   }
 
+  get termOptions() {
+    return TERM_OPTIONS.map((term) => ({
+      label: term.label,
+      value: String(term.months)
+    }));
+  }
+
+  get communityTierOptions() {
+    return COMMUNITY_TIERS.map((tier) => ({
+      label: COMMUNITY_TIER_SPECS[tier].label,
+      value: tier
+    }));
+  }
+
   get agentTrackOptions() {
     return ["none", "web"].map((variant) => ({
       label: AGENT_TRACK_LABELS[variant],
@@ -196,10 +212,6 @@ export default class PricingTool extends LightningElement {
     }));
   }
 
-  get isEnterprise() {
-    return Number(this.locations) > ENTERPRISE_LOCATION_THRESHOLD;
-  }
-
   get agentTrackDisabled() {
     return this.agentTrackVariant === "none";
   }
@@ -210,19 +222,75 @@ export default class PricingTool extends LightningElement {
 
   get igniteCxAnnual() {
     return round2(
-      Number(this.locations) * ENTERPRISE.locationSurveyPricePerMonth * 12
+      Number(this.locations) * IGNITE_CX_RATE_PER_LOCATION_PER_MONTH * 12
     );
   }
 
-  get igniteCxDisplayChecked() {
-    return this.isEnterprise || this.igniteCxEnabled;
+  get communityTierSpec() {
+    return COMMUNITY_TIER_SPECS[this.communityTier];
+  }
+
+  get communityQuote() {
+    return computeCommunityQuote({
+      tier: this.communityTier,
+      numberOfMarkets: this.communityMarkets,
+      communitySizePerMarket: this.communitySizePerMarket,
+      additionalAgileProjects: this.communityAdditionalAgileProjects,
+      additionalConsultancyProjects: this.communityAdditionalConsultancyProjects,
+      additionalAdminUsers: this.communityAdditionalAdminUsers
+    });
+  }
+
+  get communityTierDiscountPercentDisplay() {
+    return round2(this.communityTierSpec.tierDiscountPercent * 100);
+  }
+
+  get communityAgileDisabled() {
+    return !this.communityTierSpec.agileProjectRate;
+  }
+
+  get communityConsultancyDisabled() {
+    return !this.communityTierSpec.consultancyProjectRate;
+  }
+
+  get communityAdminOverageDisabled() {
+    return !Number.isFinite(this.communityTierSpec.includedAdminUsers);
+  }
+
+  // Locations only matters to the pieces that are actually priced per location - the setup
+  // fee formula ($5,000 base + $10/location) still degrades gracefully to a flat $5,000 at
+  // zero locations, so it doesn't force locations to be entered like the others do.
+  get locationsRequiredReasons() {
+    const reasons = [];
+    if (this.includeBaseSubscription) {
+      reasons.push("the base subscription");
+    }
+    if (this.igniteCxEnabled) {
+      reasons.push("Ignite CX");
+    }
+    if (this.ratingsReviewsEnabled) {
+      reasons.push("Ratings & Reviews");
+    }
+    return reasons;
+  }
+
+  get locationsRequired() {
+    return this.locationsRequiredReasons.length > 0;
+  }
+
+  get locationsMissing() {
+    return this.locationsRequired && !(Number(this.locations) > 0);
+  }
+
+  get locationsRequiredMessage() {
+    if (!this.locationsMissing) {
+      return "";
+    }
+    return `Locations is required for: ${this.locationsRequiredReasons.join(", ")}.`;
   }
 
   get baseQuote() {
-    if (this.isEnterprise) {
-      return null;
-    }
-    return computeBaseQuote(this.selectedPlan, this.locations);
+    return computeBaseQuote(this.selectedPlan, this.locations, this.termMonths);
   }
 
   get addOnsResult() {
@@ -246,13 +314,6 @@ export default class PricingTool extends LightningElement {
     );
   }
 
-  get ratingsReviewsSelection() {
-    return {
-      enabled: this.ratingsReviewsEnabled,
-      tier: this.ratingsReviewsTier
-    };
-  }
-
   get ratingsReviewsResult() {
     if (!this.ratingsReviewsEnabled) {
       return null;
@@ -260,34 +321,24 @@ export default class PricingTool extends LightningElement {
     return computeRatingsReviews(this.ratingsReviewsTier, this.locations);
   }
 
-  get enterpriseQuote() {
-    return computeEnterpriseQuote(
-      this.locations,
-      {
-        additionalLanguages: this.additionalLanguages,
-        additionalSurveys: this.additionalSurveys,
-        additionalSurveyRevisions: this.additionalSurveyRevisions,
-        additionalIntegrations: this.additionalIntegrations,
-        additionalBrands: this.additionalBrands
-      },
-      this.ratingsReviewsSelection,
-      this.websiteSurveyNeeded
-    );
-  }
-
   get discountGuidance() {
-    return getDiscountGuidance(this.locations);
+    return getDiscountGuidance();
   }
 
-  get enterpriseServiceLevelOptions() {
-    return ENTERPRISE_SERVICE_LEVELS.map((level) => ({
-      label: ENTERPRISE_SERVICE_LEVEL_LABELS[level],
-      value: level
-    }));
+  get setupFeeAmount() {
+    return computeSetupFee(this.locations);
+  }
+
+  get caseManagementFee() {
+    return CASE_MANAGEMENT_FEE;
+  }
+
+  get setupFeeLabel() {
+    return `One-Time Setup Fee ($${this.setupFeeAmount.toLocaleString()})`;
   }
 
   get listPricePerLocationPerMonth() {
-    if (this.isEnterprise) {
+    if (!this.includeBaseSubscription) {
       return 0;
     }
     return round2(
@@ -298,7 +349,7 @@ export default class PricingTool extends LightningElement {
   }
 
   get listAnnual() {
-    if (this.isEnterprise) {
+    if (!this.includeBaseSubscription) {
       return 0;
     }
     return Math.round(this.listPricePerLocationPerMonth * this.locations * 12);
@@ -328,25 +379,59 @@ export default class PricingTool extends LightningElement {
       : 0;
   }
 
-  get finalAmount() {
-    if (this.isEnterprise) {
-      return this.enterpriseQuote[this.enterpriseServiceLevel].annual;
-    }
-    return this.hasDiscount ? this.discountedAnnual : this.listAnnual;
-  }
-
   get finalRatePerLocationPerMonth() {
-    if (this.isEnterprise) {
-      return this.enterpriseQuote[this.enterpriseServiceLevel].perLocPerMonth;
-    }
     return this.hasDiscount
       ? this.discountedPerLocationPerMonth
       : this.listPricePerLocationPerMonth;
   }
 
+  // The true "what's being added to this Opportunity" total - every line item that will
+  // sync, not just the base subscription. Matches what Opportunity.Amount will roll up to.
+  get lineItemsForDisplay() {
+    return this.lineItemRequests.map((line) => ({
+      ...line,
+      key: `${line.productCode}-${line.description}`,
+      isOneTime:
+        line.productCode === SETUP_FEE_PRODUCT_CODE ||
+        line.productCode === CASE_MANAGEMENT_PRODUCT_CODE,
+      totalPrice: round2(
+        (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0)
+      )
+    }));
+  }
+
+  get lineItemsGrandTotal() {
+    return round2(
+      this.lineItemsForDisplay.reduce((sum, line) => sum + line.totalPrice, 0)
+    );
+  }
+
+  get recurringLineItemsTotal() {
+    return round2(
+      this.lineItemsForDisplay
+        .filter((line) => !line.isOneTime)
+        .reduce((sum, line) => sum + line.totalPrice, 0)
+    );
+  }
+
+  get oneTimeLineItemsTotal() {
+    return round2(
+      this.lineItemsForDisplay
+        .filter((line) => line.isOneTime)
+        .reduce((sum, line) => sum + line.totalPrice, 0)
+    );
+  }
+
+  get threeYearProjection() {
+    return computeThreeYearProjection(this.recurringLineItemsTotal);
+  }
+
   get addProductsDisabled() {
     return (
-      this.isSyncingProducts || !this.recordId || !(this.finalAmount > 0)
+      this.isSyncingProducts ||
+      !this.recordId ||
+      this.locationsMissing ||
+      this.lineItemRequests.length === 0
     );
   }
 
@@ -370,14 +455,12 @@ export default class PricingTool extends LightningElement {
   buildCommonLineItems() {
     const lines = [];
 
-    // Above 1,250 locations, the Enterprise branch already includes Ignite CX
-    // unconditionally (its own line, priced off the enterprise quote) - avoid double-adding it.
-    if (this.igniteCxEnabled && !this.isEnterprise) {
+    if (this.igniteCxEnabled) {
       lines.push({
         productCode: IGNITE_CX_PRODUCT_CODE,
         quantity: 1,
         unitPrice: this.applyDiscount(this.igniteCxAnnual),
-        description: `${this.locations} locations`
+        description: `Ignite CX — ${this.locations} locations`
       });
     }
 
@@ -391,11 +474,12 @@ export default class PricingTool extends LightningElement {
     }
 
     if (this.igniteCommunitiesEnabled) {
+      const quote = this.communityQuote;
       lines.push({
         productCode: IGNITE_COMMUNITIES_PRODUCT_CODE,
         quantity: 1,
-        unitPrice: 0,
-        description: "Ignite Communities (price TBD)"
+        unitPrice: this.applyDiscount(quote.totalAnnual),
+        description: `Ignite Communities — ${quote.label}, ${quote.markets} market(s), ${quote.communitySizePerMarket}/market`
       });
     }
 
@@ -408,12 +492,21 @@ export default class PricingTool extends LightningElement {
       });
     }
 
+    if (this.caseManagementEnabled) {
+      lines.push({
+        productCode: CASE_MANAGEMENT_PRODUCT_CODE,
+        quantity: 1,
+        unitPrice: CASE_MANAGEMENT_FEE,
+        description: "Case management build"
+      });
+    }
+
     if (this.setupFeeEnabled) {
       lines.push({
         productCode: SETUP_FEE_PRODUCT_CODE,
         quantity: 1,
-        unitPrice: SETUP_FEE_AMOUNT,
-        description: "One-time setup fee"
+        unitPrice: this.setupFeeAmount,
+        description: "Setup fee"
       });
     }
 
@@ -421,66 +514,30 @@ export default class PricingTool extends LightningElement {
   }
 
   get lineItemRequests() {
-    if (this.isEnterprise) {
-      const quote = this.enterpriseQuote;
-      const lines = [
-        {
-          productCode: IGNITE_CX_PRODUCT_CODE,
-          quantity: 1,
-          unitPrice: quote.locationSurveyAnnual,
-          description: `${this.locations} locations`
-        },
-        ...this.buildAddOnLineItems(quote.addOns.lines)
-      ];
+    const lines = [];
 
-      if (quote.ratingsReviews) {
-        lines.push({
-          productCode: RATINGS_REVIEWS_PRODUCT_CODES[this.ratingsReviewsTier],
-          quantity: 1,
-          unitPrice: quote.ratingsReviews.annual,
-          description: `${quote.ratingsReviews.bracket} locations`
-        });
-      }
-
-      if (this.websiteSurveyNeeded) {
-        lines.push({
-          productCode: ENTERPRISE_WEBSITE_SURVEY_PRODUCT_CODE,
-          quantity: 1,
-          unitPrice: quote.websiteSurveyAnnual,
-          description: "Contact Us website survey"
-        });
-      }
-
-      if (this.enterpriseServiceLevel !== "foundational") {
-        const tierAnnual = quote[this.enterpriseServiceLevel].annual;
-        lines.push({
-          productCode: ENTERPRISE_TIER_PREMIUM_PRODUCT_CODE,
-          quantity: 1,
-          unitPrice: round2(tierAnnual - quote.foundational.annual),
-          description: `${ENTERPRISE_SERVICE_LEVEL_LABELS[this.enterpriseServiceLevel]} tier premium`
-        });
-      }
-
-      return [...lines, ...this.buildCommonLineItems()];
-    }
-
-    const lines = [
-      {
+    // Add-Ons and AgentTrack are priced "over and above base package" - only meaningful
+    // (and only synced) when the rep is actually quoting the base subscription.
+    if (this.includeBaseSubscription) {
+      lines.push({
         productCode: BASE_PACKAGE_PRODUCT_CODES[this.selectedPlan],
         quantity: 1,
         unitPrice: this.applyDiscount(this.baseQuote.totalAnnual),
         description: `${this.selectedPlan} — ${this.locations} locations`
-      },
-      ...this.buildAddOnLineItems(this.addOnsResult.lines)
-    ];
-
-    if (this.agentTrackVariant !== "none" && this.callCenterResult.annualTotal > 0) {
-      lines.push({
-        productCode: AGENT_TRACK_PRODUCT_CODES[this.agentTrackVariant],
-        quantity: 1,
-        unitPrice: this.applyDiscount(this.callCenterResult.annualTotal),
-        description: `${this.agentCount} agents`
       });
+      lines.push(...this.buildAddOnLineItems(this.addOnsResult.lines));
+
+      if (
+        this.agentTrackVariant !== "none" &&
+        this.callCenterResult.annualTotal > 0
+      ) {
+        lines.push({
+          productCode: AGENT_TRACK_PRODUCT_CODES[this.agentTrackVariant],
+          quantity: 1,
+          unitPrice: this.applyDiscount(this.callCenterResult.annualTotal),
+          description: `AgentTrack (${AGENT_TRACK_LABELS[this.agentTrackVariant]}) — ${this.agentCount} agents`
+        });
+      }
     }
 
     if (this.ratingsReviewsEnabled) {
@@ -488,7 +545,7 @@ export default class PricingTool extends LightningElement {
         productCode: RATINGS_REVIEWS_PRODUCT_CODES[this.ratingsReviewsTier],
         quantity: 1,
         unitPrice: this.applyDiscount(this.ratingsReviewsResult.annual),
-        description: `${this.ratingsReviewsResult.bracket} locations`
+        description: `Ratings & Reviews (${RATINGS_REVIEWS_TIER_LABELS[this.ratingsReviewsTier]}) — ${this.ratingsReviewsResult.bracket} locations`
       });
     }
 
@@ -500,8 +557,16 @@ export default class PricingTool extends LightningElement {
     this.locations = Number.isFinite(value) && value > 0 ? value : 0;
   }
 
+  handleIncludeBaseSubscriptionToggle(event) {
+    this.includeBaseSubscription = event.target.checked;
+  }
+
   handlePlanChange(event) {
     this.selectedPlan = event.detail.value;
+  }
+
+  handleTermChange(event) {
+    this.termMonths = event.detail.value;
   }
 
   handlePackageChange(event) {
@@ -509,6 +574,7 @@ export default class PricingTool extends LightningElement {
     this.selectedPackage = packageKey;
     const defaults = PACKAGE_DEFAULTS[packageKey];
     if (defaults) {
+      this.includeBaseSubscription = true;
       this.selectedPlan = defaults.selectedPlan;
       this.ratingsReviewsEnabled = true;
       this.ratingsReviewsTier = defaults.ratingsReviewsTier;
@@ -527,12 +593,52 @@ export default class PricingTool extends LightningElement {
     this.igniteExEnabled = event.target.checked;
   }
 
+  handleIgniteCommunitiesToggle(event) {
+    this.igniteCommunitiesEnabled = event.target.checked;
+  }
+
+  handleCommunityTierChange(event) {
+    this.communityTier = event.detail.value;
+    // Reset to the new tier's included size so switching tiers doesn't carry over a
+    // surcharge that no longer makes sense (e.g. Advanced's 2,000 while viewing DIY).
+    this.communitySizePerMarket =
+      COMMUNITY_TIER_SPECS[this.communityTier].includedCommunitySize;
+  }
+
+  handleCommunityMarketsChange(event) {
+    const value = Number(event.target.value);
+    this.communityMarkets = Number.isFinite(value) && value > 0 ? value : 1;
+  }
+
+  handleCommunitySizeChange(event) {
+    const value = Number(event.target.value);
+    this.communitySizePerMarket = Number.isFinite(value) && value >= 0 ? value : 0;
+  }
+
+  handleCommunityAgileChange(event) {
+    const value = Number(event.target.value);
+    this.communityAdditionalAgileProjects =
+      Number.isFinite(value) && value > 0 ? value : 0;
+  }
+
+  handleCommunityConsultancyChange(event) {
+    const value = Number(event.target.value);
+    this.communityAdditionalConsultancyProjects =
+      Number.isFinite(value) && value > 0 ? value : 0;
+  }
+
+  handleCommunityAdminChange(event) {
+    const value = Number(event.target.value);
+    this.communityAdditionalAdminUsers =
+      Number.isFinite(value) && value > 0 ? value : 0;
+  }
+
   handleIgniteDigitalToggle(event) {
     this.igniteDigitalEnabled = event.target.checked;
   }
 
-  handleIgniteCommunitiesToggle(event) {
-    this.igniteCommunitiesEnabled = event.target.checked;
+  handleCaseManagementToggle(event) {
+    this.caseManagementEnabled = event.target.checked;
   }
 
   handleSetupFeeToggle(event) {
@@ -565,14 +671,6 @@ export default class PricingTool extends LightningElement {
     this.ratingsReviewsTier = event.detail.value;
   }
 
-  handleWebsiteSurveyToggle(event) {
-    this.websiteSurveyNeeded = event.target.checked;
-  }
-
-  handleEnterpriseServiceLevelChange(event) {
-    this.enterpriseServiceLevel = event.detail.value;
-  }
-
   handleDiscountChange(event) {
     const value = Number(event.target.value);
     this.discountPercent =
@@ -582,6 +680,17 @@ export default class PricingTool extends LightningElement {
   }
 
   async handleAddProductsToOpportunity() {
+    if (this.locationsMissing) {
+      this.dispatchEvent(
+        new ShowToastEvent({
+          title: "Locations required",
+          message: this.locationsRequiredMessage,
+          variant: "error"
+        })
+      );
+      return;
+    }
+
     const lineItems = this.lineItemRequests;
     const unmapped = lineItems.find((line) => !line.productCode);
     if (unmapped) {

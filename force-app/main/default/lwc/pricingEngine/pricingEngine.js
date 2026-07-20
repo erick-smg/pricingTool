@@ -1,89 +1,94 @@
 /**
- * Pure pricing calculations for the SMG Mid-Market Pricing Model (July 2026).
- * Transcribed from "Developing a pricing tool - July 2026.xlsx":
- *   - Quoting Tool / Working Model  -> base plan pricing, volume tiers, GM%
- *   - Ratings & Reviews             -> reputation product tiers
- *   - Call Center WM                -> AgentTrack add-on
- *   - ALTERNATIVE - LARGE PROSPECT  -> enterprise (>1,250 locations) pricing
+ * Pure pricing calculations for the SMG New Logo Pricing Model (July 2026).
+ * Transcribed from "New Logo Pricing Analysis & Rate Card.xlsx" and
+ * "New Logo Pricing Strategy Memo.docx" (14 executed new-logo order forms, 2018-2026).
+ *
+ * Replaces the prior "Developing a pricing tool - July 2026.xlsx" model: there is no more
+ * Elite tier and no separate >1,250-location Enterprise branch - one continuous rate card
+ * by location band covers every deal size, with a new Solution-Support-Only tier added.
  *
  * No LWC/Apex dependencies here by design - keep this file plain, importable,
  * and unit-testable in isolation.
  */
 
-export const PLAN_TRACKS = ["Standard", "Professional"];
-export const PLAN_TIERS = ["Foundational", "Advanced", "Elite"];
-
 export const PLANS = [
-  "Standard Foundational",
-  "Standard Advanced",
-  "Standard Elite",
-  "Professional Foundational",
-  "Professional Advanced",
-  "Professional Elite"
+  "Pro/Advanced",
+  "Standard/Advanced",
+  "Pro/Foundational",
+  "Standard/Foundational",
+  "Solution Support Only"
 ];
 
-// Working Model D10/E10/F10 - annual contract value at the 100-location entry point.
-const STANDARD_BASE_ACV = {
-  Foundational: 60000,
-  Advanced: 130000,
-  Elite: 340000
+export const SOLUTION_SUPPORT_ONLY_PLAN = "Solution Support Only";
+
+// Rate Card sheet, row 4 header - anchor tier is Pro/Advanced; every other package is a
+// flat multiplier off the same location-band rate.
+export const PLAN_MULTIPLIERS = {
+  "Pro/Advanced": 1.0,
+  "Standard/Advanced": 0.9,
+  "Pro/Foundational": 0.83,
+  "Standard/Foundational": 0.75,
+  "Solution Support Only": 0.55
 };
 
-// Working Model I12/J12/K12 - Professional track carries a flat 35% premium over Standard.
-export const STANDARD_TO_PROFESSIONAL_PREMIUM = 0.35;
-
-export const BASE_ACV = {};
-PLAN_TIERS.forEach((tier) => {
-  BASE_ACV[`Standard ${tier}`] = STANDARD_BASE_ACV[tier];
-  BASE_ACV[`Professional ${tier}`] =
-    Math.round(
-      STANDARD_BASE_ACV[tier] * (1 + STANDARD_TO_PROFESSIONAL_PREMIUM) * 100
-    ) / 100;
-});
-
-// Working Model E12/F12 - Advanced/Elite premiums over Foundational, applied to
-// discounted volume-tier pricing only (the entry tier uses each plan's own ACV directly).
-export const ADVANCED_PREMIUM_OVER_FOUNDATIONAL = 0.3;
-export const ELITE_PREMIUM_OVER_FOUNDATIONAL = 0.55;
-
-// Working Model H15 - every plan's entry tier covers the first 100 locations, billed as a
-// minimum commitment: the tier's 100 locations are always charged even if fewer are entered.
-export const ENTRY_POINT_LOCATIONS = 100;
-
-// Working Model C16:C20 / G16:H20 - volume discount tiers beyond the entry point.
-// Each tier's monthly rate = (Foundational track entry price) * (1 - discount), then
-// Advanced/Elite = that discounted Foundational rate * (1 + their premium over Foundational).
-export const VOLUME_DISCOUNT_TIERS = [
+// Recommended Rate Card sheet, rows 5-12 - Pro/Advanced anchor $/location/month by band.
+export const LOCATION_BANDS = [
+  { min: 1, max: 75, label: "1 - 75", ratePerLocationPerMonth: 110.0 },
+  { min: 76, max: 150, label: "76 - 150", ratePerLocationPerMonth: 80.0 },
+  { min: 151, max: 300, label: "151 - 300", ratePerLocationPerMonth: 58.0 },
+  { min: 301, max: 600, label: "301 - 600", ratePerLocationPerMonth: 44.0 },
+  { min: 601, max: 1200, label: "601 - 1,200", ratePerLocationPerMonth: 34.0 },
+  { min: 1201, max: 2500, label: "1,201 - 2,500", ratePerLocationPerMonth: 27.0 },
+  { min: 2501, max: 5000, label: "2,501 - 5,000", ratePerLocationPerMonth: 22.0 },
   {
-    min: 0,
-    max: ENTRY_POINT_LOCATIONS,
-    discount: 0,
-    label: `1-${ENTRY_POINT_LOCATIONS}`
-  },
-  { min: 101, max: 250, discount: 0.05, label: "101-250" },
-  { min: 251, max: 500, discount: 0.075, label: "251-500" },
-  { min: 501, max: 750, discount: 0.15, label: "501-750" },
-  { min: 751, max: 1000, discount: 0.25, label: "751-1,000" },
-  { min: 1001, max: 1250, discount: 0.4, label: "1,001-1,250" }
+    min: 5001,
+    max: Infinity,
+    label: "5,000+ (custom)",
+    ratePerLocationPerMonth: 18.0,
+    isCustom: true
+  }
 ];
 
-export const ENTERPRISE_LOCATION_THRESHOLD = 1250;
+// Rate Card sheet, row 16 - annual minimum floors by service type.
+export const ANNUAL_MINIMUM_FLOOR = {
+  fullService: 80000,
+  supportOnly: 36000
+};
 
-// Working Model O19:T20 / Q20 - est. delivery hours and hourly labor rate by plan tier,
-// plus a flat 5.5% COGS overhead on ACV. Used to estimate GM% for the seller's own reference.
-const EST_HOURS_BY_TIER = { Foundational: 170, Advanced: 546, Elite: 1457 };
-const LABOR_HOURLY_RATE = 83008 / (2080 * 0.5);
-const COGS_OVERHEAD_PERCENT = 0.055;
+// Rate Card sheet, row 17 - replaces the observed $0-$40,000 setup fee inconsistency.
+export const SETUP_FEE = {
+  base: 5000,
+  perLocation: 10,
+  cap: 40000
+};
+
+// Rate Card sheet, row 18 - already the de facto standard in 9 of 12 subscription deals.
+export const ESCALATOR_PERCENT = 0.04;
+
+// Rate Card sheet, row 19 - 36 months standard; shorter terms carry a rate premium.
+export const TERM_OPTIONS = [
+  { months: 36, label: "36 months (standard)", ratePremium: 0 },
+  { months: 24, label: "24 months", ratePremium: 0.05 },
+  { months: 12, label: "12 months", ratePremium: 0.1 }
+];
 
 // Quoting Tool D26:G41 - flat unit rates for add-ons over the base package.
+// additionalBrands updated per Rate Card row 22 (multi-brand adder): $15,000 -> $6,000/yr.
 export const ADD_ON_RATES = {
   additionalLanguageSurveys: 2500, // per additional language, survey translation
   additionalLanguageReports: 7500, // per additional language, report translation
   additionalSurveys: 12500,
   additionalSurveyRevisions: 1500,
   additionalIntegrations: 10000,
-  additionalBrands: 15000
+  additionalBrands: 6000
 };
+
+// Rate Card sheet, row 23 - Case management build, one-time.
+export const CASE_MANAGEMENT_FEE = 7500;
+
+// Ignite CX (formerly "Location Survey") is a distinct SMG product/price-book line item,
+// not part of the New Logo memo - rate carried over unchanged from the prior model.
+export const IGNITE_CX_RATE_PER_LOCATION_PER_MONTH = 17;
 
 // Call Center WM - AgentTrack call-center add-on.
 export const CALL_CENTER = {
@@ -177,159 +182,268 @@ export const MANAGED_LISTING_MANAGEMENT_REFERENCE = [
   { locations: "20,000+", premium: 14.256, pro: 7.264, basic: 5.696 }
 ];
 
-// ALTERNATIVE - LARGE PROSPECT sheet: enterprise (>1,250 locations) pricing.
-export const ENTERPRISE = {
-  locationSurveyPricePerMonth: 17,
-  websiteSurveyFlatAnnual: 30000, // sheet's own static "DO COMPLEXITY" placeholder
-  advancedPremiumOverFoundational: 0.25,
-  elitePremiumOverAdvanced: 0.3
+// Ignite Communities (Bulbshare) rate card - "Bulbshare USD quote builder v1" workbook.
+// Rolls up into a single Ignite Communities line item (product code IGNITE-COMMUNITIES) -
+// no separate products for platform/recruitment/service/etc.
+//
+// Each tier's fees below are reconciled from the workbook's own Market-1 total ("Total
+// Subscription Fees") minus its included AGILE/CONSULTANCY project costs, split into:
+//   platformFee               - discounted 50% for each market beyond the first
+//   serviceFee                - discounted to 25% for each market beyond the first
+//   recruitmentAndIncentiveFee - billed in full per market (real pass-through cost, not a
+//                                licence/service fee - Bulbshare always recruits the same
+//                                base 1,000 members + 25% refresh regardless of tier)
+//
+// AGILE/CONSULTANCY per-project rates are tier-specific, not a single universal rate: Elite's
+// own Market-1 formula computes to $3,050/$8,950 (24 AGILE @ $3,050 = $73,200; 8 CONSULTANCY
+// @ $8,950 = $71,600) while Foundation/Advanced both reconcile to $4,555/$13,366 (Foundation:
+// 8 AGILE @ $4,555 = $36,439 rounding; Advanced: 12 @ $4,555 = $54,660, 4 @ $13,366 = $53,464).
+// Elite's lower per-project rate is a genuine bulk/enterprise discount, not a data error.
+export const COMMUNITY_TIERS = ["DIY", "Foundation", "Advanced", "Elite"];
+
+export const COMMUNITY_TIER_SPECS = {
+  DIY: {
+    label: "DIY (Starter)",
+    platformFee: 59736,
+    serviceFee: 5600,
+    recruitmentAndIncentiveFee: 19843,
+    includedCommunitySize: 1000,
+    includedAgileProjects: 0,
+    agileProjectRate: null,
+    includedConsultancyProjects: 0,
+    consultancyProjectRate: null,
+    includedAdminUsers: 5,
+    tierDiscountPercent: 0
+  },
+  Foundation: {
+    label: "Foundation",
+    platformFee: 59736,
+    serviceFee: 14371,
+    recruitmentAndIncentiveFee: 19843,
+    includedCommunitySize: 1500,
+    includedAgileProjects: 8,
+    agileProjectRate: 4555,
+    includedConsultancyProjects: 0,
+    consultancyProjectRate: null,
+    includedAdminUsers: 10,
+    tierDiscountPercent: 0.025
+  },
+  Advanced: {
+    label: "Advanced",
+    platformFee: 67202,
+    serviceFee: 33913,
+    recruitmentAndIncentiveFee: 19843,
+    includedCommunitySize: 2000,
+    includedAgileProjects: 12,
+    agileProjectRate: 4555,
+    includedConsultancyProjects: 4,
+    consultancyProjectRate: 13366,
+    includedAdminUsers: Infinity,
+    tierDiscountPercent: 0.05
+  },
+  Elite: {
+    label: "Elite (Enterprise)",
+    platformFee: 67202,
+    serviceFee: 81644,
+    recruitmentAndIncentiveFee: 17830,
+    includedCommunitySize: 1000,
+    includedAgileProjects: 24,
+    agileProjectRate: 3050,
+    includedConsultancyProjects: 8,
+    consultancyProjectRate: 8950,
+    includedAdminUsers: 10,
+    tierDiscountPercent: 0.075
+  }
 };
 
-// Quoting Tool T51-T56 - manual discount guidance notes, since list prices are set high
-// relative to market and reps are expected to apply a location-based discount band.
-export function getDiscountGuidance(locations) {
-  if (locations <= 100) {
-    return "Common discounts at the small end of the market, up to 100 locations: 20-25% off list price.";
-  } else if (locations <= 400) {
-    return "100-400 locations: discounts required are typically 20-30% off list price.";
-  } else if (locations <= 800) {
-    return "400-800 locations: discounts required are typically 25-35% off list price.";
+// $10/member above the tier's included community size, per market, per year - the one
+// explicit surcharge rate stated anywhere in the workbook (Example/GBP sheet), in USD.
+export const COMMUNITY_SIZE_SURCHARGE_PER_MEMBER = 10;
+// $500/user/year beyond the tier's included admin users (generic DIY/Enterprise calculator
+// sheets both price additional admins this way).
+export const COMMUNITY_ADDITIONAL_ADMIN_USER_RATE = 500;
+// "Add. markets 50% discount on licence fees" / "Add. market based on 25% allocation".
+export const COMMUNITY_ADDITIONAL_MARKET_PLATFORM_RATE = 0.5;
+export const COMMUNITY_ADDITIONAL_MARKET_SERVICE_RATE = 0.25;
+
+/**
+ * Computes the all-in annual Ignite Communities price - platform + service + recruitment
+ * across every market, plus AGILE/CONSULTANCY project costs (included + overage) and any
+ * admin-user overage, less the tier's fixed subscription discount.
+ */
+export function computeCommunityQuote({
+  tier,
+  numberOfMarkets,
+  communitySizePerMarket,
+  additionalAgileProjects,
+  additionalConsultancyProjects,
+  additionalAdminUsers
+}) {
+  const spec = COMMUNITY_TIER_SPECS[tier];
+  if (!spec) {
+    throw new Error(`Unknown community tier: ${tier}`);
   }
-  return "800-1,200+ locations: discounts required are typically 30-40% off list price.";
+
+  const markets = Math.max(1, Number(numberOfMarkets) || 1);
+  const size = Math.max(0, Number(communitySizePerMarket) || 0);
+  const extraAgile = Math.max(0, Number(additionalAgileProjects) || 0);
+  const extraConsultancy = Math.max(0, Number(additionalConsultancyProjects) || 0);
+  const extraAdmins = Math.max(0, Number(additionalAdminUsers) || 0);
+
+  const sizeSurchargePerMarket = round2(
+    Math.max(0, size - spec.includedCommunitySize) *
+      COMMUNITY_SIZE_SURCHARGE_PER_MEMBER
+  );
+
+  let marketsCost = 0;
+  for (let i = 0; i < markets; i += 1) {
+    const isAdditionalMarket = i > 0;
+    const platformRate = isAdditionalMarket
+      ? COMMUNITY_ADDITIONAL_MARKET_PLATFORM_RATE
+      : 1;
+    const serviceRate = isAdditionalMarket
+      ? COMMUNITY_ADDITIONAL_MARKET_SERVICE_RATE
+      : 1;
+    marketsCost +=
+      round2(spec.platformFee * platformRate) +
+      round2(spec.serviceFee * serviceRate) +
+      spec.recruitmentAndIncentiveFee +
+      sizeSurchargePerMarket;
+  }
+
+  const includedAgileCost = spec.agileProjectRate
+    ? spec.includedAgileProjects * spec.agileProjectRate
+    : 0;
+  const includedConsultancyCost = spec.consultancyProjectRate
+    ? spec.includedConsultancyProjects * spec.consultancyProjectRate
+    : 0;
+  const agileOverageCost = spec.agileProjectRate
+    ? extraAgile * spec.agileProjectRate
+    : 0;
+  const consultancyOverageCost = spec.consultancyProjectRate
+    ? extraConsultancy * spec.consultancyProjectRate
+    : 0;
+  const adminOverageCost = Number.isFinite(spec.includedAdminUsers)
+    ? extraAdmins * COMMUNITY_ADDITIONAL_ADMIN_USER_RATE
+    : 0;
+
+  const totalBeforeDiscount = round2(
+    marketsCost +
+      includedAgileCost +
+      includedConsultancyCost +
+      agileOverageCost +
+      consultancyOverageCost +
+      adminOverageCost
+  );
+  const totalAnnual = round2(
+    totalBeforeDiscount * (1 - spec.tierDiscountPercent)
+  );
+
+  return {
+    tier,
+    label: spec.label,
+    markets,
+    communitySizePerMarket: size,
+    totalAnnual,
+    tierDiscountPercent: spec.tierDiscountPercent,
+    includedCommunitySize: spec.includedCommunitySize,
+    includedAgileProjects: spec.includedAgileProjects,
+    includedConsultancyProjects: spec.includedConsultancyProjects,
+    includedAdminUsers: spec.includedAdminUsers,
+    agileProjectRate: spec.agileProjectRate,
+    consultancyProjectRate: spec.consultancyProjectRate
+  };
+}
+
+// Rate card is fitted to the observed volume-discount curve and the modeled discount is
+// already capped at 10% in the LWC - keep guidance consistent with that, rather than the
+// prior model's much deeper (20-40%) discount bands.
+export function getDiscountGuidance() {
+  return "Rates are already fitted to the volume-discount curve - use the modeled discount sparingly (max 10%). Prefer a setup-fee waiver or the 2% marketing-event credit over cutting the per-location rate.";
 }
 
 function round2(value) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-function planTier(plan) {
-  return PLAN_TIERS.find((tier) => plan.endsWith(tier));
-}
-
-function planTrack(plan) {
-  return PLAN_TRACKS.find((track) => plan.startsWith(track));
-}
-
-/**
- * Monthly $/location rate for every one of the 6 volume buckets, for the given plan.
- * Bucket 0 (entry, 1-100 locations) uses the plan's own ACV directly.
- * Buckets 1-5 discount the *Foundational* track's entry price, then Advanced/Elite
- * apply their premium on top of that discounted Foundational rate.
- */
-function buildRateTable(plan) {
-  const track = planTrack(plan);
-  const tier = planTier(plan);
-  const foundationalEntryRate = round2(
-    BASE_ACV[`${track} Foundational`] / ENTRY_POINT_LOCATIONS / 12
+function findLocationBand(locations) {
+  const safeLocations = Math.max(1, Number(locations) || 1);
+  return (
+    LOCATION_BANDS.find(
+      (band) => safeLocations >= band.min && safeLocations <= band.max
+    ) || LOCATION_BANDS[LOCATION_BANDS.length - 1]
   );
-  const entryRate = round2(BASE_ACV[plan] / ENTRY_POINT_LOCATIONS / 12);
-  const premium =
-    tier === "Advanced"
-      ? ADVANCED_PREMIUM_OVER_FOUNDATIONAL
-      : tier === "Elite"
-        ? ELITE_PREMIUM_OVER_FOUNDATIONAL
-        : 0;
+}
 
-  return VOLUME_DISCOUNT_TIERS.map((bucket, index) => {
-    if (index === 0) {
-      return { ...bucket, ratePerMonth: entryRate };
-    }
-    const discountedFoundational = round2(
-      foundationalEntryRate * (1 - bucket.discount)
-    );
-    const rate =
-      tier === "Foundational"
-        ? discountedFoundational
-        : round2(discountedFoundational * (1 + premium));
-    return { ...bucket, ratePerMonth: rate };
-  });
+function getTermPremium(termMonths) {
+  const term = TERM_OPTIONS.find((t) => t.months === Number(termMonths));
+  return term ? term.ratePremium : 0;
 }
 
 /**
- * Allocates a total location count across the 6 volume buckets, matching the sheet's
- * P7:P12 formulas. The entry bucket always allocates its full 100 locations (a minimum
- * billing commitment) regardless of the actual location count entered.
+ * Computes the base package quote for a given plan, location count, and term length.
+ * One continuous rate card covers every deal size (Recommended Rate Card sheet) - locations
+ * above 5,000 use the top ("custom") band rate but are flagged via isCustomPricing so the
+ * UI can prompt for deal-desk review rather than silently auto-quoting.
  */
-function allocateLocations(locations) {
-  const capped = Math.min(locations, ENTERPRISE_LOCATION_THRESHOLD);
-  const allocations = [ENTRY_POINT_LOCATIONS];
-  let previousMax = ENTRY_POINT_LOCATIONS;
-  for (let i = 1; i < VOLUME_DISCOUNT_TIERS.length; i += 1) {
-    const bucketMax = VOLUME_DISCOUNT_TIERS[i].max;
-    const alloc = Math.max(0, Math.min(capped, bucketMax) - previousMax);
-    allocations.push(alloc);
-    previousMax = bucketMax;
-  }
-  return allocations;
-}
-
-function estimatedGmPercent(plan, cumulativeAnnualRevenue) {
-  const tier = planTier(plan);
-  const laborCostTotal = Math.round(
-    LABOR_HOURLY_RATE * EST_HOURS_BY_TIER[tier]
-  );
-  const cogsOverhead = COGS_OVERHEAD_PERCENT * BASE_ACV[plan];
-  const totalCogs = laborCostTotal + cogsOverhead;
-  if (cumulativeAnnualRevenue <= 0) {
-    return null;
-  }
-  return (cumulativeAnnualRevenue - totalCogs) / cumulativeAnnualRevenue;
-}
-
-/**
- * Computes the base package quote for a given plan and location count (Quoting Tool sheet).
- * Returns { isEnterprise: true } above the 1,250-location threshold - callers should route
- * to computeEnterpriseQuote() instead.
- */
-export function computeBaseQuote(plan, locations) {
+export function computeBaseQuote(plan, locations, termMonths) {
   if (!PLANS.includes(plan)) {
     throw new Error(`Unknown plan: ${plan}`);
   }
-  const safeLocations = Math.max(0, Number(locations) || 0);
-  if (safeLocations > ENTERPRISE_LOCATION_THRESHOLD) {
-    return { isEnterprise: true };
-  }
+  const safeLocations = Math.max(1, Number(locations) || 1);
+  const band = findLocationBand(safeLocations);
+  const multiplier = PLAN_MULTIPLIERS[plan];
+  const termPremium = getTermPremium(termMonths);
 
-  const rateTable = buildRateTable(plan);
-  const allocations = allocateLocations(safeLocations);
-
-  let cumulativeAnnual = 0;
-  const buckets = rateTable.map((bucket, index) => {
-    const locationsInBucket = allocations[index];
-    const monthly = round2(locationsInBucket * bucket.ratePerMonth);
-    const annual = round2(monthly * 12);
-    cumulativeAnnual = round2(cumulativeAnnual + annual);
-    return {
-      label: bucket.label,
-      ratePerMonth: bucket.ratePerMonth,
-      locationsInBucket,
-      monthly,
-      annual,
-      cumulativeAnnual,
-      gmPercent:
-        locationsInBucket > 0
-          ? estimatedGmPercent(plan, cumulativeAnnual)
-          : null
-    };
-  });
-
-  const totalLocationsBilled = allocations.reduce((sum, n) => sum + n, 0);
-  const totalMonthly = round2(buckets.reduce((sum, b) => sum + b.monthly, 0));
-  const totalAnnual = round2(totalMonthly * 12);
-  const pricePerLocationPerMonth =
-    totalLocationsBilled > 0 ? totalMonthly / totalLocationsBilled : 0;
-  const gmPercent =
-    [...buckets].reverse().find((b) => b.gmPercent !== null)?.gmPercent ?? null;
+  const listRatePerLocationPerMonth = round2(
+    band.ratePerLocationPerMonth * multiplier * (1 + termPremium)
+  );
+  const rawAnnual = round2(listRatePerLocationPerMonth * safeLocations * 12);
+  const annualFloor =
+    plan === SOLUTION_SUPPORT_ONLY_PLAN
+      ? ANNUAL_MINIMUM_FLOOR.supportOnly
+      : ANNUAL_MINIMUM_FLOOR.fullService;
+  const totalAnnual = Math.max(rawAnnual, annualFloor);
+  const pricePerLocationPerMonth = round2(totalAnnual / safeLocations / 12);
 
   return {
-    isEnterprise: false,
     plan,
-    buckets,
-    totalLocationsBilled,
-    totalMonthly,
-    totalAnnual,
+    locations: safeLocations,
+    bandLabel: band.label,
+    isCustomPricing: Boolean(band.isCustom),
+    listRatePerLocationPerMonth,
     pricePerLocationPerMonth,
-    gmPercent
+    totalMonthly: round2(totalAnnual / 12),
+    totalAnnual,
+    floorApplied: totalAnnual > rawAnnual
+  };
+}
+
+/**
+ * Setup fee (Rate Card row 17): $5,000 base + $10/committed location, capped at $40,000.
+ * Replaces the prior model's flat, ad hoc $0-$40,000 range.
+ */
+export function computeSetupFee(committedLocations) {
+  const safeLocations = Math.max(0, Number(committedLocations) || 0);
+  return Math.min(
+    round2(SETUP_FEE.base + SETUP_FEE.perLocation * safeLocations),
+    SETUP_FEE.cap
+  );
+}
+
+/**
+ * 3-year projection using the standard 4%/year escalator (Rate Card row 18), applied
+ * in-term and at renewal. Purely informational - does not affect what's quoted for Year 1.
+ */
+export function computeThreeYearProjection(year1Annual) {
+  const year1 = round2(year1Annual);
+  const year2 = round2(year1 * (1 + ESCALATOR_PERCENT));
+  const year3 = round2(year2 * (1 + ESCALATOR_PERCENT));
+  return {
+    year1,
+    year2,
+    year3,
+    threeYearTotal: round2(year1 + year2 + year3)
   };
 }
 
@@ -486,65 +600,4 @@ export function computeRatingsReviews(tierKey, locations) {
   const monthly = round2(ratePerMonth * safeLocations);
   const annual = round2(monthly * 12);
   return { tierKey, bracket: bracket.label, ratePerMonth, monthly, annual };
-}
-
-/**
- * ALTERNATIVE - LARGE PROSPECT sheet: enterprise pricing above 1,250 locations.
- * Reuses the shared add-on and Ratings & Reviews engines rather than the source sheet's
- * static "SEE QUOTING TAB" stubs (0) or its hardcoded single-bracket R&R cell reference -
- * see plan notes for why this is a correction, verified against the sheet's own example.
- */
-export function computeEnterpriseQuote(
-  locations,
-  addOnQuantities,
-  ratingsReviewsSelection,
-  websiteSurveyNeeded
-) {
-  const safeLocations = Math.max(1, Number(locations) || 1);
-
-  const locationSurveyAnnual = round2(
-    safeLocations * ENTERPRISE.locationSurveyPricePerMonth * 12
-  );
-  const addOns = computeAddOns(addOnQuantities, safeLocations);
-  const ratingsReviews =
-    ratingsReviewsSelection && ratingsReviewsSelection.enabled
-      ? computeRatingsReviews(ratingsReviewsSelection.tier, safeLocations)
-      : null;
-  const websiteSurveyAnnual = websiteSurveyNeeded
-    ? ENTERPRISE.websiteSurveyFlatAnnual
-    : 0;
-
-  const foundationalAnnual = round2(
-    locationSurveyAnnual +
-      addOns.annualTotal +
-      (ratingsReviews ? ratingsReviews.annual : 0) +
-      websiteSurveyAnnual
-  );
-  const advancedAnnual = round2(
-    foundationalAnnual * (1 + ENTERPRISE.advancedPremiumOverFoundational)
-  );
-  const eliteAnnual = round2(
-    advancedAnnual * (1 + ENTERPRISE.elitePremiumOverAdvanced)
-  );
-
-  const blendedPerLocPerMonth = (annual) => round2(annual / safeLocations / 12);
-
-  return {
-    locationSurveyAnnual,
-    addOns,
-    ratingsReviews,
-    websiteSurveyAnnual,
-    foundational: {
-      annual: foundationalAnnual,
-      perLocPerMonth: blendedPerLocPerMonth(foundationalAnnual)
-    },
-    advanced: {
-      annual: advancedAnnual,
-      perLocPerMonth: blendedPerLocPerMonth(advancedAnnual)
-    },
-    elite: {
-      annual: eliteAnnual,
-      perLocPerMonth: blendedPerLocPerMonth(eliteAnnual)
-    }
-  };
 }

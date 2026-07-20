@@ -8,7 +8,7 @@
             type="number"
             label="Locations"
             value={locations}
-            min="1"
+            min="0"
             step="1"
             onchange={handleLocationsChange}
           ></lightning-input>
@@ -22,7 +22,40 @@
             onchange={handlePackageChange}
           ></lightning-combobox>
         </lightning-layout-item>
+        <lightning-layout-item size="4" padding="around-small">
+          <lightning-input
+            data-id="include-base-subscription-toggle"
+            type="checkbox"
+            label="Include base subscription"
+            checked={includeBaseSubscription}
+            onchange={handleIncludeBaseSubscriptionToggle}
+          ></lightning-input>
+        </lightning-layout-item>
       </lightning-layout>
+
+      <template if:false={includeBaseSubscription}>
+        <div
+          class="slds-text-body_small slds-m-bottom_small"
+          style="color: #706e6b"
+        >
+          Custom quote — the Plan, Term, Add-Ons, and AgentTrack below won't
+          be added to the Opportunity. Only the toggled items (Ignite CX,
+          Ignite EX, Ignite Communities, Ignite Digital, Case Management,
+          Ratings & Reviews, Setup Fee) will sync. Locations is only
+          required if Ignite CX or Ratings & Reviews is turned on, since
+          only those are priced per location — the setup fee still works
+          without it (it just skips the per-location portion of its fee).
+        </div>
+      </template>
+
+      <template if:true={locationsMissing}>
+        <div
+          class="slds-notify slds-notify_alert slds-theme_alert-texture slds-theme_error slds-m-bottom_small"
+          role="alert"
+        >
+          {locationsRequiredMessage}
+        </div>
+      </template>
 
       <template if:true={selectedPackage}>
         <div
@@ -31,34 +64,40 @@
         >
           Pre-filled the Plan, Ratings & Reviews tier, Ignite CX, Ignite EX,
           Ignite Communities, and Ignite Digital below as a starting point —
-          adjust freely. Ignite EX, Ignite Communities, and Ignite Digital
-          have no pricing yet (shown as $0 placeholders). Case management
-          isn't wired into pricing at all; see the Discovery Guide tab.
-        </div>
-      </template>
-
-      <template if:true={isEnterprise}>
-        <div
-          class="slds-notify slds-notify_alert slds-theme_alert-texture slds-theme_warning slds-m-bottom_small"
-          role="alert"
-        >
-          {locations} locations exceeds the 1,250-location standard pricing
-          ceiling. See the
-          <strong>Enterprise</strong> tab for pricing.
+          adjust freely. That Plan mapping is a first guess (there's no
+          exact 1:1 match between these 4 packages and the 5 rate-card
+          plans); review it rather than treating it as final. Ignite
+          Communities uses its own calculator below (tier, markets,
+          community size) once toggled on. Ignite EX and Ignite Digital
+          still have no pricing yet (shown as $0 placeholders). Case
+          management isn't wired into pricing at all; see the Discovery
+          Guide tab.
         </div>
       </template>
 
       <lightning-tabset variant="scoped">
         <!-- ============ QUOTE BUILDER ============ -->
         <lightning-tab label="Quote Builder">
-          <lightning-combobox
-            data-id="plan-combobox"
-            label="Plan"
-            value={selectedPlan}
-            options={planOptions}
-            onchange={handlePlanChange}
-            class="slds-m-bottom_medium"
-          ></lightning-combobox>
+          <lightning-layout multiple-rows="true">
+            <lightning-layout-item size="6" padding="around-small">
+              <lightning-combobox
+                data-id="plan-combobox"
+                label="Plan"
+                value={selectedPlan}
+                options={planOptions}
+                onchange={handlePlanChange}
+              ></lightning-combobox>
+            </lightning-layout-item>
+            <lightning-layout-item size="6" padding="around-small">
+              <lightning-combobox
+                data-id="term-combobox"
+                label="Term"
+                value={termMonths}
+                options={termOptions}
+                onchange={handleTermChange}
+              ></lightning-combobox>
+            </lightning-layout-item>
+          </lightning-layout>
 
           <h3
             class="slds-text-heading_small slds-m-top_medium slds-m-bottom_x-small"
@@ -196,158 +235,8 @@
           <h3
             class="slds-text-heading_small slds-m-top_medium slds-m-bottom_x-small"
           >
-            Ignite Add-Ons
+            Ratings & Reviews
           </h3>
-          <lightning-layout multiple-rows="true">
-            <lightning-layout-item size="4" padding="around-small">
-              <lightning-input
-                data-id="ignite-cx-toggle"
-                type="checkbox"
-                label="Ignite CX (Location Survey)"
-                checked={igniteCxDisplayChecked}
-                disabled={isEnterprise}
-                onchange={handleIgniteCxToggle}
-              ></lightning-input>
-              <template if:true={isEnterprise}>
-                <p class="slds-text-body_small">
-                  Always included above 1,250 locations.
-                </p>
-              </template>
-            </lightning-layout-item>
-            <lightning-layout-item size="4" padding="around-small">
-              <lightning-input
-                data-id="ignite-ex-toggle"
-                type="checkbox"
-                label="Ignite EX (price TBD)"
-                checked={igniteExEnabled}
-                onchange={handleIgniteExToggle}
-              ></lightning-input>
-            </lightning-layout-item>
-            <lightning-layout-item size="4" padding="around-small">
-              <lightning-input
-                data-id="ignite-communities-toggle"
-                type="checkbox"
-                label="Ignite Communities (price TBD)"
-                checked={igniteCommunitiesEnabled}
-                onchange={handleIgniteCommunitiesToggle}
-              ></lightning-input>
-            </lightning-layout-item>
-            <lightning-layout-item size="4" padding="around-small">
-              <lightning-input
-                data-id="ignite-digital-toggle"
-                type="checkbox"
-                label="Ignite Digital (price TBD)"
-                checked={igniteDigitalEnabled}
-                onchange={handleIgniteDigitalToggle}
-              ></lightning-input>
-            </lightning-layout-item>
-            <lightning-layout-item size="4" padding="around-small">
-              <lightning-input
-                data-id="setup-fee-toggle"
-                type="checkbox"
-                label="One-Time Setup Fee ($10,000)"
-                checked={setupFeeEnabled}
-                onchange={handleSetupFeeToggle}
-              ></lightning-input>
-            </lightning-layout-item>
-          </lightning-layout>
-
-          <template if:false={isEnterprise}>
-            <div class="slds-box slds-theme_default slds-m-top_medium">
-              <h3 class="slds-text-heading_small slds-m-bottom_x-small">
-                List Price
-              </h3>
-              <lightning-layout multiple-rows="true">
-                <lightning-layout-item size="4" padding="around-small">
-                  <p class="slds-text-title">Per Location / Month</p>
-                  <p class="slds-text-heading_medium">
-                    <lightning-formatted-number
-                      value={listPricePerLocationPerMonth}
-                      format-style="currency"
-                      currency-code="USD"
-                    ></lightning-formatted-number>
-                  </p>
-                </lightning-layout-item>
-                <lightning-layout-item size="4" padding="around-small">
-                  <p class="slds-text-title">Monthly</p>
-                  <p class="slds-text-heading_medium">
-                    <lightning-formatted-number
-                      value={listMonthly}
-                      format-style="currency"
-                      currency-code="USD"
-                    ></lightning-formatted-number>
-                  </p>
-                </lightning-layout-item>
-                <lightning-layout-item size="4" padding="around-small">
-                  <p class="slds-text-title">Annual</p>
-                  <p class="slds-text-heading_medium">
-                    <lightning-formatted-number
-                      value={listAnnual}
-                      format-style="currency"
-                      currency-code="USD"
-                    ></lightning-formatted-number>
-                  </p>
-                </lightning-layout-item>
-              </lightning-layout>
-
-              <div
-                class="slds-text-body_small slds-m-top_small slds-m-bottom_small"
-              >
-                <strong>Discount guidance:</strong> {discountGuidance}
-              </div>
-
-              <lightning-input
-                data-id="discount-input"
-                type="number"
-                label="Modeled discount % (max 10%)"
-                value={discountPercent}
-                min="0"
-                max="10"
-                step="1"
-                onchange={handleDiscountChange}
-                class="slds-m-bottom_small"
-              ></lightning-input>
-
-              <template if:true={hasDiscount}>
-                <lightning-layout multiple-rows="true">
-                  <lightning-layout-item size="4" padding="around-small">
-                    <p class="slds-text-title">Discounted / Loc / Mo</p>
-                    <p class="slds-text-heading_small">
-                      <lightning-formatted-number
-                        value={discountedPerLocationPerMonth}
-                        format-style="currency"
-                        currency-code="USD"
-                      ></lightning-formatted-number>
-                    </p>
-                  </lightning-layout-item>
-                  <lightning-layout-item size="4" padding="around-small">
-                    <p class="slds-text-title">Discounted Monthly</p>
-                    <p class="slds-text-heading_small">
-                      <lightning-formatted-number
-                        value={discountedMonthly}
-                        format-style="currency"
-                        currency-code="USD"
-                      ></lightning-formatted-number>
-                    </p>
-                  </lightning-layout-item>
-                  <lightning-layout-item size="4" padding="around-small">
-                    <p class="slds-text-title">Discounted Annual</p>
-                    <p class="slds-text-heading_small">
-                      <lightning-formatted-number
-                        value={discountedAnnual}
-                        format-style="currency"
-                        currency-code="USD"
-                      ></lightning-formatted-number>
-                    </p>
-                  </lightning-layout-item>
-                </lightning-layout>
-              </template>
-            </div>
-          </template>
-        </lightning-tab>
-
-        <!-- ============ RATINGS & REVIEWS ============ -->
-        <lightning-tab label="Ratings & Reviews">
           <lightning-input
             data-id="rr-toggle"
             type="checkbox"
@@ -368,7 +257,7 @@
           ></lightning-radio-group>
 
           <template if:true={ratingsReviewsResult}>
-            <div class="slds-box slds-theme_default">
+            <div class="slds-box slds-theme_default slds-m-bottom_medium">
               <p>
                 Bracket:
                 <strong>{ratingsReviewsResult.bracket}</strong> locations
@@ -409,188 +298,297 @@
           </template>
 
           <h3
-            class="slds-text-heading_small slds-m-top_large slds-m-bottom_x-small"
-          >
-            Managed Listing Management — Reference Pricing ($/Loc/Mo)
-          </h3>
-          <p class="slds-text-body_small slds-m-bottom_x-small">
-            Reference only — not wired into the calculator above. The source
-            spreadsheet's column layout for this block (ChatExec / Local Pages
-            breakpoints) is ambiguous; confirm with the model owner before
-            quoting off these figures.
-          </p>
-          <table class="slds-table slds-table_bordered slds-table_cell-buffer">
-            <thead>
-              <tr class="slds-line-height_reset">
-                <th scope="col">Locations</th>
-                <th scope="col">Premium</th>
-                <th scope="col">Pro</th>
-                <th scope="col">Basic</th>
-              </tr>
-            </thead>
-            <tbody>
-              <template
-                for:each={managedListingManagementReference}
-                for:item="row"
-              >
-                <tr key={row.locations}>
-                  <td>{row.locations}</td>
-                  <td>
-                    <lightning-formatted-number
-                      value={row.premium}
-                      format-style="currency"
-                      currency-code="USD"
-                    ></lightning-formatted-number>
-                  </td>
-                  <td>
-                    <lightning-formatted-number
-                      value={row.pro}
-                      format-style="currency"
-                      currency-code="USD"
-                    ></lightning-formatted-number>
-                  </td>
-                  <td>
-                    <lightning-formatted-number
-                      value={row.basic}
-                      format-style="currency"
-                      currency-code="USD"
-                    ></lightning-formatted-number>
-                  </td>
-                </tr>
-              </template>
-            </tbody>
-          </table>
-        </lightning-tab>
-
-        <!-- ============ ENTERPRISE ============ -->
-        <lightning-tab label="Enterprise (1,250+)">
-          <p class="slds-text-body_small slds-m-bottom_small">
-            Uses the Locations count and Add-Ons entered on the Quote Builder
-            tab, and the Ratings & Reviews selection from the tab above.
-          </p>
-
-          <lightning-input
-            data-id="website-survey-toggle"
-            type="checkbox"
-            label="Website survey needed (Contact Us)? — adds a flat $30,000/yr estimate"
-            checked={websiteSurveyNeeded}
-            onchange={handleWebsiteSurveyToggle}
-            class="slds-m-bottom_medium"
-          ></lightning-input>
-
-          <lightning-radio-group
-            data-id="enterprise-service-level-radio-group"
-            label="Service Level (used as the final quoted value)"
-            options={enterpriseServiceLevelOptions}
-            value={enterpriseServiceLevel}
-            onchange={handleEnterpriseServiceLevelChange}
-            class="slds-m-bottom_medium"
-          ></lightning-radio-group>
-
-          <table class="slds-table slds-table_bordered slds-table_cell-buffer">
-            <thead>
-              <tr class="slds-line-height_reset">
-                <th scope="col">Service Level</th>
-                <th scope="col">Annual $</th>
-                <th scope="col">Blended $/Loc/Mo</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Foundational</td>
-                <td>
-                  <lightning-formatted-number
-                    value={enterpriseQuote.foundational.annual}
-                    format-style="currency"
-                    currency-code="USD"
-                  ></lightning-formatted-number>
-                </td>
-                <td>
-                  <lightning-formatted-number
-                    value={enterpriseQuote.foundational.perLocPerMonth}
-                    format-style="currency"
-                    currency-code="USD"
-                  ></lightning-formatted-number>
-                </td>
-              </tr>
-              <tr>
-                <td>Advanced (+25%)</td>
-                <td>
-                  <lightning-formatted-number
-                    value={enterpriseQuote.advanced.annual}
-                    format-style="currency"
-                    currency-code="USD"
-                  ></lightning-formatted-number>
-                </td>
-                <td>
-                  <lightning-formatted-number
-                    value={enterpriseQuote.advanced.perLocPerMonth}
-                    format-style="currency"
-                    currency-code="USD"
-                  ></lightning-formatted-number>
-                </td>
-              </tr>
-              <tr>
-                <td>Elite (+30% over Advanced)</td>
-                <td>
-                  <lightning-formatted-number
-                    value={enterpriseQuote.elite.annual}
-                    format-style="currency"
-                    currency-code="USD"
-                  ></lightning-formatted-number>
-                </td>
-                <td>
-                  <lightning-formatted-number
-                    value={enterpriseQuote.elite.perLocPerMonth}
-                    format-style="currency"
-                    currency-code="USD"
-                  ></lightning-formatted-number>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-
-          <h3
             class="slds-text-heading_small slds-m-top_medium slds-m-bottom_x-small"
           >
-            Foundational Breakdown
+            Ignite Add-Ons
           </h3>
-          <table class="slds-table slds-table_bordered slds-table_cell-buffer">
-            <tbody>
-              <tr>
-                <td>Location Survey ($17/loc/mo)</td>
-                <td>
+          <lightning-layout multiple-rows="true">
+            <lightning-layout-item size="4" padding="around-small">
+              <lightning-input
+                data-id="ignite-cx-toggle"
+                type="checkbox"
+                label="Ignite CX (Location Survey)"
+                checked={igniteCxEnabled}
+                onchange={handleIgniteCxToggle}
+              ></lightning-input>
+            </lightning-layout-item>
+            <lightning-layout-item size="4" padding="around-small">
+              <lightning-input
+                data-id="ignite-ex-toggle"
+                type="checkbox"
+                label="Ignite EX (price TBD)"
+                checked={igniteExEnabled}
+                onchange={handleIgniteExToggle}
+              ></lightning-input>
+            </lightning-layout-item>
+            <lightning-layout-item size="4" padding="around-small">
+              <lightning-input
+                data-id="ignite-communities-toggle"
+                type="checkbox"
+                label="Ignite Communities"
+                checked={igniteCommunitiesEnabled}
+                onchange={handleIgniteCommunitiesToggle}
+              ></lightning-input>
+            </lightning-layout-item>
+            <lightning-layout-item size="4" padding="around-small">
+              <lightning-input
+                data-id="ignite-digital-toggle"
+                type="checkbox"
+                label="Ignite Digital (price TBD)"
+                checked={igniteDigitalEnabled}
+                onchange={handleIgniteDigitalToggle}
+              ></lightning-input>
+            </lightning-layout-item>
+            <lightning-layout-item size="4" padding="around-small">
+              <lightning-input
+                data-id="case-management-toggle"
+                type="checkbox"
+                label="Case Management Build ($7,500 one-time)"
+                checked={caseManagementEnabled}
+                onchange={handleCaseManagementToggle}
+              ></lightning-input>
+            </lightning-layout-item>
+            <lightning-layout-item size="4" padding="around-small">
+              <lightning-input
+                data-id="setup-fee-toggle"
+                type="checkbox"
+                label={setupFeeLabel}
+                checked={setupFeeEnabled}
+                onchange={handleSetupFeeToggle}
+              ></lightning-input>
+            </lightning-layout-item>
+          </lightning-layout>
+
+          <template if:true={igniteCommunitiesEnabled}>
+            <div class="slds-box slds-theme_default slds-m-top_medium">
+              <h3 class="slds-text-heading_small slds-m-bottom_x-small">
+                Ignite Communities Calculator
+              </h3>
+              <p class="slds-text-body_small slds-m-bottom_small">
+                Rolls up into the single Ignite Communities line item — no
+                separate products for platform, recruitment, or servicing.
+              </p>
+
+              <lightning-layout multiple-rows="true">
+                <lightning-layout-item size="4" padding="around-small">
+                  <lightning-combobox
+                    data-id="community-tier-combobox"
+                    label="Tier"
+                    value={communityTier}
+                    options={communityTierOptions}
+                    onchange={handleCommunityTierChange}
+                  ></lightning-combobox>
+                </lightning-layout-item>
+                <lightning-layout-item size="4" padding="around-small">
+                  <lightning-input
+                    data-id="community-markets-input"
+                    type="number"
+                    label="Number of Markets"
+                    value={communityMarkets}
+                    min="1"
+                    step="1"
+                    onchange={handleCommunityMarketsChange}
+                  ></lightning-input>
+                </lightning-layout-item>
+                <lightning-layout-item size="4" padding="around-small">
+                  <lightning-input
+                    data-id="community-size-input"
+                    type="number"
+                    label="Community Size per Market"
+                    value={communitySizePerMarket}
+                    min="0"
+                    step="1"
+                    onchange={handleCommunitySizeChange}
+                  ></lightning-input>
+                  <p class="slds-text-body_small">
+                    {communityTierSpec.includedCommunitySize} included — $10/member
+                    over that, per market.
+                  </p>
+                </lightning-layout-item>
+                <lightning-layout-item size="4" padding="around-small">
+                  <lightning-input
+                    data-id="community-agile-input"
+                    type="number"
+                    label="Additional AGILE Projects"
+                    value={communityAdditionalAgileProjects}
+                    min="0"
+                    step="1"
+                    disabled={communityAgileDisabled}
+                    onchange={handleCommunityAgileChange}
+                  ></lightning-input>
+                  <template if:true={communityAgileDisabled}>
+                    <p class="slds-text-body_small">Not available on this tier.</p>
+                  </template>
+                </lightning-layout-item>
+                <lightning-layout-item size="4" padding="around-small">
+                  <lightning-input
+                    data-id="community-consultancy-input"
+                    type="number"
+                    label="Additional CONSULTANCY Studies"
+                    value={communityAdditionalConsultancyProjects}
+                    min="0"
+                    step="1"
+                    disabled={communityConsultancyDisabled}
+                    onchange={handleCommunityConsultancyChange}
+                  ></lightning-input>
+                  <template if:true={communityConsultancyDisabled}>
+                    <p class="slds-text-body_small">Not available on this tier.</p>
+                  </template>
+                </lightning-layout-item>
+                <lightning-layout-item size="4" padding="around-small">
+                  <lightning-input
+                    data-id="community-admin-input"
+                    type="number"
+                    label="Additional Admin Users"
+                    value={communityAdditionalAdminUsers}
+                    min="0"
+                    step="1"
+                    disabled={communityAdminOverageDisabled}
+                    onchange={handleCommunityAdminChange}
+                  ></lightning-input>
+                  <template if:true={communityAdminOverageDisabled}>
+                    <p class="slds-text-body_small">Unlimited admins included.</p>
+                  </template>
+                </lightning-layout-item>
+              </lightning-layout>
+
+              <p class="slds-m-top_small">
+                Ignite Communities:
+                <strong>
                   <lightning-formatted-number
-                    value={enterpriseQuote.locationSurveyAnnual}
+                    value={communityQuote.totalAnnual}
                     format-style="currency"
                     currency-code="USD"
                   ></lightning-formatted-number>
-                </td>
-              </tr>
-              <tr>
-                <td>
-                  Add-Ons (languages, surveys, revisions, integrations, brands)
-                </td>
-                <td>
+                </strong>
+                / year ({communityTierDiscountPercentDisplay}% tier discount applied)
+              </p>
+            </div>
+          </template>
+
+          <template if:false={includeBaseSubscription}>
+            <div class="slds-box slds-theme_default slds-m-top_medium">
+              <h3 class="slds-text-heading_small slds-m-bottom_x-small">
+                Quoted Price
+              </h3>
+              <p class="slds-text-body_small">
+                Base subscription excluded — this is a custom, add-ons-only
+                quote. Check "Include base subscription" above to price a
+                Plan.
+              </p>
+            </div>
+          </template>
+
+          <template if:true={includeBaseSubscription}>
+          <div class="slds-box slds-theme_default slds-m-top_medium">
+            <h3 class="slds-text-heading_small slds-m-bottom_x-small">
+              Quoted Price
+            </h3>
+
+            <template if:true={baseQuote.isCustomPricing}>
+              <div
+                class="slds-notify slds-notify_alert slds-theme_alert-texture slds-theme_warning slds-m-bottom_small"
+                role="alert"
+              >
+                {locations} locations is above the 5,000-location rate card
+                ceiling — this uses custom pricing. Confirm with the deal
+                desk before quoting.
+              </div>
+            </template>
+            <template if:true={baseQuote.floorApplied}>
+              <div class="slds-text-body_small slds-m-bottom_small">
+                Annual minimum applied — the calculated rate fell below the
+                plan's annual floor.
+              </div>
+            </template>
+
+            <lightning-layout multiple-rows="true">
+              <lightning-layout-item size="4" padding="around-small">
+                <p class="slds-text-title">Per Location / Month</p>
+                <p class="slds-text-heading_medium">
                   <lightning-formatted-number
-                    value={enterpriseQuote.addOns.annualTotal}
+                    value={listPricePerLocationPerMonth}
                     format-style="currency"
                     currency-code="USD"
                   ></lightning-formatted-number>
-                </td>
-              </tr>
-              <tr>
-                <td>Website Survey</td>
-                <td>
+                </p>
+              </lightning-layout-item>
+              <lightning-layout-item size="4" padding="around-small">
+                <p class="slds-text-title">Monthly</p>
+                <p class="slds-text-heading_medium">
                   <lightning-formatted-number
-                    value={enterpriseQuote.websiteSurveyAnnual}
+                    value={listMonthly}
                     format-style="currency"
                     currency-code="USD"
                   ></lightning-formatted-number>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                </p>
+              </lightning-layout-item>
+              <lightning-layout-item size="4" padding="around-small">
+                <p class="slds-text-title">Annual</p>
+                <p class="slds-text-heading_medium">
+                  <lightning-formatted-number
+                    value={listAnnual}
+                    format-style="currency"
+                    currency-code="USD"
+                  ></lightning-formatted-number>
+                </p>
+              </lightning-layout-item>
+            </lightning-layout>
+
+            <div
+              class="slds-text-body_small slds-m-top_small slds-m-bottom_small"
+            >
+              <strong>Discount guidance:</strong> {discountGuidance}
+            </div>
+
+            <lightning-input
+              data-id="discount-input"
+              type="number"
+              label="Modeled discount % (max 10%)"
+              value={discountPercent}
+              min="0"
+              max="10"
+              step="1"
+              onchange={handleDiscountChange}
+              class="slds-m-bottom_small"
+            ></lightning-input>
+
+            <template if:true={hasDiscount}>
+              <lightning-layout multiple-rows="true">
+                <lightning-layout-item size="4" padding="around-small">
+                  <p class="slds-text-title">Discounted / Loc / Mo</p>
+                  <p class="slds-text-heading_small">
+                    <lightning-formatted-number
+                      value={discountedPerLocationPerMonth}
+                      format-style="currency"
+                      currency-code="USD"
+                    ></lightning-formatted-number>
+                  </p>
+                </lightning-layout-item>
+                <lightning-layout-item size="4" padding="around-small">
+                  <p class="slds-text-title">Discounted Monthly</p>
+                  <p class="slds-text-heading_small">
+                    <lightning-formatted-number
+                      value={discountedMonthly}
+                      format-style="currency"
+                      currency-code="USD"
+                    ></lightning-formatted-number>
+                  </p>
+                </lightning-layout-item>
+                <lightning-layout-item size="4" padding="around-small">
+                  <p class="slds-text-title">Discounted Annual</p>
+                  <p class="slds-text-heading_small">
+                    <lightning-formatted-number
+                      value={discountedAnnual}
+                      format-style="currency"
+                      currency-code="USD"
+                    ></lightning-formatted-number>
+                  </p>
+                </lightning-layout-item>
+              </lightning-layout>
+            </template>
+          </div>
+          </template>
         </lightning-tab>
 
         <!-- ============ DISCOVERY GUIDE ============ -->
@@ -611,7 +609,6 @@
               Any managed services for Ratings needed (listings management,
               white-glove responses)?
             </li>
-            <li>Website survey needed (Contact Us)?</li>
             <li>Do they have a customer community today?</li>
             <li>
               Are communities specifically requested (vs. "nice to have")?
@@ -627,11 +624,13 @@
             Selecting a package from the "Package" dropdown at the top of
             this tool pre-fills the Plan, Ratings & Reviews tier, Ignite CX,
             Ignite EX, Ignite Communities, and Ignite Digital below — that
-            Plan mapping is a first guess (there's no exact 1:1 match to
-            these 4 packages) and should be reviewed, not treated as final.
-            Ignite EX, Ignite Communities, and Ignite Digital have no
-            pricing yet (shown as $0 placeholders). Case management isn't
-            wired into pricing anywhere in this tool yet.
+            Plan mapping is a first guess (there's no exact 1:1 match
+            between these 4 packages and the 5 rate-card plans) and should
+            be reviewed, not treated as final. Ignite Communities is priced
+            via its own tier/market/community-size calculator. Ignite EX
+            and Ignite Digital still have no pricing yet (shown as $0
+            placeholders). Case management isn't wired into pricing
+            anywhere in this tool yet.
           </p>
 
           <div class="slds-box slds-m-bottom_small">
@@ -676,34 +675,159 @@
               <li>Additional directories of Ratings & Reviews</li>
             </ul>
           </div>
+
+          <h3
+            class="slds-text-heading_small slds-m-top_large slds-m-bottom_x-small"
+          >
+            Managed Listing Management — Reference Pricing ($/Loc/Mo)
+          </h3>
+          <p class="slds-text-body_small slds-m-bottom_x-small">
+            Reference only — not wired into the calculator on the Quote
+            Builder tab. The source spreadsheet's column layout for this
+            block (ChatExec / Local Pages breakpoints) is ambiguous; confirm
+            with the model owner before quoting off these figures.
+          </p>
+          <table class="slds-table slds-table_bordered slds-table_cell-buffer">
+            <thead>
+              <tr class="slds-line-height_reset">
+                <th scope="col">Locations</th>
+                <th scope="col">Premium</th>
+                <th scope="col">Pro</th>
+                <th scope="col">Basic</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template
+                for:each={managedListingManagementReference}
+                for:item="row"
+              >
+                <tr key={row.locations}>
+                  <td>{row.locations}</td>
+                  <td>
+                    <lightning-formatted-number
+                      value={row.premium}
+                      format-style="currency"
+                      currency-code="USD"
+                    ></lightning-formatted-number>
+                  </td>
+                  <td>
+                    <lightning-formatted-number
+                      value={row.pro}
+                      format-style="currency"
+                      currency-code="USD"
+                    ></lightning-formatted-number>
+                  </td>
+                  <td>
+                    <lightning-formatted-number
+                      value={row.basic}
+                      format-style="currency"
+                      currency-code="USD"
+                    ></lightning-formatted-number>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
         </lightning-tab>
       </lightning-tabset>
 
-      <div
-        class="slds-box slds-theme_shade slds-m-top_medium slds-grid slds-grid_align-spread slds-grid_vertical-align-center slds-wrap"
-      >
-        <div>
-          <p class="slds-text-title">Final Quoted Amount (Annual)</p>
-          <p class="slds-text-heading_medium">
-            <lightning-formatted-number
-              value={finalAmount}
-              format-style="currency"
-              currency-code="USD"
-            ></lightning-formatted-number>
+      <div class="slds-box slds-theme_shade slds-m-top_medium">
+        <h3 class="slds-text-heading_small slds-m-bottom_x-small">
+          Quote Summary
+        </h3>
+
+        <template if:true={lineItemsForDisplay.length}>
+          <div class="slds-var-m-bottom_small" style="overflow-x: auto">
+            <table
+              class="slds-table slds-table_bordered slds-table_cell-buffer"
+            >
+              <thead>
+                <tr class="slds-line-height_reset">
+                  <th scope="col">Product</th>
+                  <th scope="col">Qty</th>
+                  <th scope="col">Price</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template for:each={lineItemsForDisplay} for:item="line">
+                  <tr key={line.key}>
+                    <td>
+                      {line.description}
+                      <template if:true={line.isOneTime}>
+                        <span class="slds-text-body_small">&nbsp;(one-time)</span>
+                      </template>
+                    </td>
+                    <td>{line.quantity}</td>
+                    <td>
+                      <lightning-formatted-number
+                        value={line.totalPrice}
+                        format-style="currency"
+                        currency-code="USD"
+                      ></lightning-formatted-number>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </template>
+        <template if:false={lineItemsForDisplay.length}>
+          <p class="slds-text-body_small slds-m-bottom_small">
+            No products selected yet.
           </p>
-          <template if:true={setupFeeEnabled}>
-            <p class="slds-text-body_small">
-              + $10,000 one-time setup fee (not included above)
+        </template>
+
+        <div
+          class="slds-grid slds-grid_align-spread slds-grid_vertical-align-center slds-wrap"
+        >
+          <div>
+            <p class="slds-text-title">Total</p>
+            <p class="slds-text-heading_medium">
+              <lightning-formatted-number
+                value={lineItemsGrandTotal}
+                format-style="currency"
+                currency-code="USD"
+              ></lightning-formatted-number>
             </p>
-          </template>
+            <p class="slds-text-body_small">
+              Recurring:
+              <lightning-formatted-number
+                value={recurringLineItemsTotal}
+                format-style="currency"
+                currency-code="USD"
+              ></lightning-formatted-number>
+              · One-time:
+              <lightning-formatted-number
+                value={oneTimeLineItemsTotal}
+                format-style="currency"
+                currency-code="USD"
+              ></lightning-formatted-number>
+            </p>
+            <template if:true={recurringLineItemsTotal}>
+              <p class="slds-text-body_small">
+                Recurring Yr 2 (4% escalator):
+                <lightning-formatted-number
+                  value={threeYearProjection.year2}
+                  format-style="currency"
+                  currency-code="USD"
+                ></lightning-formatted-number>
+                · Yr 3:
+                <lightning-formatted-number
+                  value={threeYearProjection.year3}
+                  format-style="currency"
+                  currency-code="USD"
+                ></lightning-formatted-number>
+              </p>
+            </template>
+          </div>
+          <lightning-button
+            data-id="add-products-button"
+            variant="brand"
+            label="Add Products to Opportunity"
+            disabled={addProductsDisabled}
+            onclick={handleAddProductsToOpportunity}
+          ></lightning-button>
         </div>
-        <lightning-button
-          data-id="add-products-button"
-          variant="brand"
-          label="Add Products to Opportunity"
-          disabled={addProductsDisabled}
-          onclick={handleAddProductsToOpportunity}
-        ></lightning-button>
       </div>
     </div>
   </lightning-card>

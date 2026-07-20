@@ -1,52 +1,114 @@
 import {
   computeBaseQuote,
+  computeSetupFee,
+  computeThreeYearProjection,
   computeAddOns,
   computeCallCenter,
   computeRatingsReviews,
-  computeEnterpriseQuote,
+  computeCommunityQuote,
   getDiscountGuidance,
-  ENTERPRISE_LOCATION_THRESHOLD
+  LOCATION_BANDS,
+  PLAN_MULTIPLIERS
 } from "c/pricingEngine";
 
 describe("computeBaseQuote", () => {
-  it("matches the spreadsheet's saved example: Professional Foundational at 300 locations", () => {
-    const result = computeBaseQuote("Professional Foundational", 300);
-    expect(result.isEnterprise).toBe(false);
-    expect(result.totalAnnual).toBeCloseTo(233898, 2);
-    expect(result.totalMonthly).toBeCloseTo(19491.5, 2);
-    expect(result.pricePerLocationPerMonth).toBeCloseTo(64.9717, 2);
-    expect(result.gmPercent).toBeCloseTo(0.922940769053177, 6);
+  it("matches the Recommended Rate Card sheet's Pro/Advanced band rates", () => {
+    expect(computeBaseQuote("Pro/Advanced", 50, 36).listRatePerLocationPerMonth).toBe(110);
+    expect(computeBaseQuote("Pro/Advanced", 110, 36).listRatePerLocationPerMonth).toBe(80);
+    expect(computeBaseQuote("Pro/Advanced", 225, 36).listRatePerLocationPerMonth).toBe(58);
+    expect(computeBaseQuote("Pro/Advanced", 450, 36).listRatePerLocationPerMonth).toBe(44);
+    expect(computeBaseQuote("Pro/Advanced", 900, 36).listRatePerLocationPerMonth).toBe(34);
+    expect(computeBaseQuote("Pro/Advanced", 1800, 36).listRatePerLocationPerMonth).toBe(27);
+    expect(computeBaseQuote("Pro/Advanced", 3500, 36).listRatePerLocationPerMonth).toBe(22);
+    expect(computeBaseQuote("Pro/Advanced", 6000, 36).listRatePerLocationPerMonth).toBe(18);
   });
 
-  it("always bills a minimum of 100 locations even when fewer are entered", () => {
-    const result = computeBaseQuote("Standard Foundational", 10);
-    expect(result.totalLocationsBilled).toBe(100);
-    // Standard Foundational entry rate = 60000 / 100 / 12 = 50/mo
-    expect(result.totalMonthly).toBeCloseTo(5000, 2);
+  it("matches the Recommended Rate Card sheet's package multipliers in the 1-75 band", () => {
+    expect(computeBaseQuote("Standard/Advanced", 50, 36).listRatePerLocationPerMonth).toBe(99);
+    expect(computeBaseQuote("Pro/Foundational", 50, 36).listRatePerLocationPerMonth).toBe(91.3);
+    expect(computeBaseQuote("Standard/Foundational", 50, 36).listRatePerLocationPerMonth).toBe(82.5);
+    expect(computeBaseQuote("Solution Support Only", 50, 36).listRatePerLocationPerMonth).toBe(60.5);
   });
 
-  it("allocates locations across volume-discount buckets at tier boundaries", () => {
-    const at100 = computeBaseQuote("Standard Foundational", 100);
-    expect(at100.buckets[0].locationsInBucket).toBe(100);
-    expect(at100.buckets[1].locationsInBucket).toBe(0);
-
-    const at101 = computeBaseQuote("Standard Foundational", 101);
-    expect(at101.buckets[0].locationsInBucket).toBe(100);
-    expect(at101.buckets[1].locationsInBucket).toBe(1);
+  it("matches the Recommended Rate Card sheet's 2,501-5,000 band exactly (Jersey Mike's comparable)", () => {
+    const result = computeBaseQuote("Pro/Advanced", 3500, 36);
+    expect(result.totalAnnual).toBeCloseTo(924000, 2);
   });
 
-  it("switches to enterprise mode above 1,250 locations", () => {
-    const result = computeBaseQuote("Standard Elite", 1251);
-    expect(result.isEnterprise).toBe(true);
+  it("flags locations above 5,000 as custom pricing", () => {
+    expect(computeBaseQuote("Pro/Advanced", 3500, 36).isCustomPricing).toBe(false);
+    expect(computeBaseQuote("Pro/Advanced", 5001, 36).isCustomPricing).toBe(true);
   });
 
-  it("bills the full 1,250-location ceiling at exactly the threshold", () => {
-    const result = computeBaseQuote(
-      "Standard Foundational",
-      ENTERPRISE_LOCATION_THRESHOLD
-    );
-    expect(result.isEnterprise).toBe(false);
-    expect(result.totalLocationsBilled).toBe(1250);
+  it("enforces the $80,000/year full-service annual minimum floor", () => {
+    const result = computeBaseQuote("Pro/Advanced", 50, 36);
+    // raw = 110 * 50 * 12 = 66,000, below the $80,000 floor
+    expect(result.totalAnnual).toBe(80000);
+    expect(result.floorApplied).toBe(true);
+  });
+
+  it("enforces the lower $36,000/year Solution-Support-Only floor", () => {
+    const result = computeBaseQuote("Solution Support Only", 50, 36);
+    // raw = 60.5 * 50 * 12 = 36,300, above its own $36,000 floor
+    expect(result.totalAnnual).toBeCloseTo(36300, 2);
+    expect(result.floorApplied).toBe(false);
+  });
+
+  it("does not apply the floor once the raw annual clears it", () => {
+    const result = computeBaseQuote("Pro/Advanced", 900, 36);
+    expect(result.floorApplied).toBe(false);
+    expect(result.totalAnnual).toBeCloseTo(367200, 2);
+  });
+
+  it("applies the 24-month (+5%) and 12-month (+10%) term premiums", () => {
+    const term36 = computeBaseQuote("Pro/Advanced", 900, 36).listRatePerLocationPerMonth;
+    const term24 = computeBaseQuote("Pro/Advanced", 900, 24).listRatePerLocationPerMonth;
+    const term12 = computeBaseQuote("Pro/Advanced", 900, 12).listRatePerLocationPerMonth;
+    expect(term24).toBeCloseTo(term36 * 1.05, 2);
+    expect(term12).toBeCloseTo(term36 * 1.1, 2);
+  });
+
+  it("throws for an unknown plan", () => {
+    expect(() => computeBaseQuote("Elite", 100, 36)).toThrow();
+  });
+});
+
+describe("LOCATION_BANDS / PLAN_MULTIPLIERS", () => {
+  it("covers every location count from 1 upward with no gaps", () => {
+    expect(LOCATION_BANDS[0].min).toBe(1);
+    for (let i = 1; i < LOCATION_BANDS.length; i += 1) {
+      expect(LOCATION_BANDS[i].min).toBe(LOCATION_BANDS[i - 1].max + 1);
+    }
+    expect(LOCATION_BANDS[LOCATION_BANDS.length - 1].max).toBe(Infinity);
+  });
+
+  it("anchors Pro/Advanced at a 1.0 multiplier", () => {
+    expect(PLAN_MULTIPLIERS["Pro/Advanced"]).toBe(1.0);
+  });
+});
+
+describe("computeSetupFee", () => {
+  it("matches the Deal Calculator sheet's worked example: 800 committed locations -> $13,000", () => {
+    expect(computeSetupFee(800)).toBe(13000);
+  });
+
+  it("charges just the $5,000 base fee at zero committed locations", () => {
+    expect(computeSetupFee(0)).toBe(5000);
+  });
+
+  it("caps the fee at $40,000 regardless of location count", () => {
+    expect(computeSetupFee(4000)).toBe(40000);
+    expect(computeSetupFee(100000)).toBe(40000);
+  });
+});
+
+describe("computeThreeYearProjection", () => {
+  it("matches the Deal Calculator sheet's worked example (800 locations, Pro/Advanced, 36mo)", () => {
+    const result = computeThreeYearProjection(326400);
+    expect(result.year1).toBe(326400);
+    expect(result.year2).toBeCloseTo(339456, 2);
+    expect(result.year3).toBeCloseTo(353034.24, 2);
+    expect(result.threeYearTotal).toBeCloseTo(1018890.24, 2);
   });
 });
 
@@ -57,11 +119,11 @@ describe("computeAddOns", () => {
     expect(result.perLocPerMonth).toBe(0);
   });
 
-  it("computes flat annual totals independent of location count (rate x qty)", () => {
+  it("prices additional brands at the memo's updated $6,000/yr multi-brand rate", () => {
     const result = computeAddOns({ additionalBrands: 1 }, 300);
-    expect(result.annualTotal).toBe(15000);
-    // $/loc/mo = 15000 / 300 / 12
-    expect(result.perLocPerMonth).toBeCloseTo(4.17, 2);
+    expect(result.annualTotal).toBe(6000);
+    // $/loc/mo = 6000 / 300 / 12
+    expect(result.perLocPerMonth).toBeCloseTo(1.67, 2);
   });
 });
 
@@ -77,8 +139,6 @@ describe("computeCallCenter", () => {
 
   it("does not double-count agents when converting to $/loc/mo (corrected G46-style formula)", () => {
     const web = computeCallCenter("web", 50, 500);
-    // annualTotal should already reflect the agent count once; perLocPerMonth should be
-    // a small fraction of annualTotal/locations/12, not annualTotal*agents/locations/12.
     const expectedPerLoc = Math.round((web.annualTotal / 500 / 12) * 100) / 100;
     expect(web.perLocPerMonth).toBeCloseTo(expectedPerLoc, 2);
   });
@@ -104,34 +164,137 @@ describe("computeRatingsReviews", () => {
   });
 });
 
-describe("computeEnterpriseQuote", () => {
-  it("matches the ALTERNATIVE - LARGE PROSPECT sheet's worked example at 3,000 locations", () => {
-    const result = computeEnterpriseQuote(
-      3000,
-      {
-        additionalLanguages: 0,
-        additionalSurveys: 1,
-        additionalSurveyRevisions: 0,
-        additionalIntegrations: 0,
-        additionalBrands: 0
-      },
-      { enabled: true, tier: "pro" },
-      true
+describe("computeCommunityQuote", () => {
+  it("matches the workbook's Advanced tier Market-1 total exactly (default size, 1 market)", () => {
+    const result = computeCommunityQuote({
+      tier: "Advanced",
+      numberOfMarkets: 1,
+      communitySizePerMarket: 2000,
+      additionalAgileProjects: 0,
+      additionalConsultancyProjects: 0,
+      additionalAdminUsers: 0
+    });
+    expect(result.totalAnnual).toBeCloseTo(217627.9, 2);
+  });
+
+  it("matches the workbook's Elite tier Market-1 total exactly (default size, 1 market)", () => {
+    const result = computeCommunityQuote({
+      tier: "Elite",
+      numberOfMarkets: 1,
+      communitySizePerMarket: 1000,
+      additionalAgileProjects: 0,
+      additionalConsultancyProjects: 0,
+      additionalAdminUsers: 0
+    });
+    expect(result.totalAnnual).toBeCloseTo(288115.3, 2);
+  });
+
+  it("matches the workbook's DIY tier total exactly (no discount, no AGILE/CONSULTANCY available)", () => {
+    const result = computeCommunityQuote({
+      tier: "DIY",
+      numberOfMarkets: 1,
+      communitySizePerMarket: 1000,
+      additionalAgileProjects: 5, // should have no effect - not available on this tier
+      additionalConsultancyProjects: 5, // should have no effect - not available on this tier
+      additionalAdminUsers: 0
+    });
+    expect(result.totalAnnual).toBe(85179);
+  });
+
+  it("discounts additional markets 50% on platform fee and 75% on service fee", () => {
+    const oneMarket = computeCommunityQuote({
+      tier: "Advanced",
+      numberOfMarkets: 1,
+      communitySizePerMarket: 2000
+    });
+    const twoMarkets = computeCommunityQuote({
+      tier: "Advanced",
+      numberOfMarkets: 2,
+      communitySizePerMarket: 2000
+    });
+    // 2nd market adds: platform*0.5 (33,601) + service*0.25 (8,478.25) + recruitment (19,843)
+    const expectedSecondMarketAddOn = 33601 + 8478.25 + 19843;
+    expect(twoMarkets.totalAnnual - oneMarket.totalAnnual).toBeCloseTo(
+      expectedSecondMarketAddOn * (1 - 0.05),
+      2
     );
-    expect(result.foundational.annual).toBeCloseTo(792200, 2);
-    expect(result.advanced.annual).toBeCloseTo(990250, 2);
-    expect(result.elite.annual).toBeCloseTo(1287325, 2);
-    expect(result.foundational.perLocPerMonth).toBeCloseTo(22.0056, 2);
-    expect(result.advanced.perLocPerMonth).toBeCloseTo(27.5069, 2);
-    expect(result.elite.perLocPerMonth).toBeCloseTo(35.759, 2);
+  });
+
+  it("charges $10/member over the tier's included community size, per market", () => {
+    const atIncluded = computeCommunityQuote({
+      tier: "DIY",
+      numberOfMarkets: 1,
+      communitySizePerMarket: 1000
+    });
+    const overIncluded = computeCommunityQuote({
+      tier: "DIY",
+      numberOfMarkets: 1,
+      communitySizePerMarket: 1200
+    });
+    expect(overIncluded.totalAnnual - atIncluded.totalAnnual).toBe(2000);
+  });
+
+  it("prices additional AGILE/CONSULTANCY projects at the tier's own reconciled rate", () => {
+    const base = computeCommunityQuote({
+      tier: "Advanced",
+      numberOfMarkets: 1,
+      communitySizePerMarket: 2000
+    });
+    const withExtraProjects = computeCommunityQuote({
+      tier: "Advanced",
+      numberOfMarkets: 1,
+      communitySizePerMarket: 2000,
+      additionalAgileProjects: 1,
+      additionalConsultancyProjects: 1
+    });
+    const expectedDelta = (4555 + 13366) * (1 - 0.05);
+    expect(withExtraProjects.totalAnnual - base.totalAnnual).toBeCloseTo(
+      expectedDelta,
+      2
+    );
+  });
+
+  it("never charges for additional admin users on the Advanced tier (unlimited included)", () => {
+    const base = computeCommunityQuote({
+      tier: "Advanced",
+      numberOfMarkets: 1,
+      communitySizePerMarket: 2000,
+      additionalAdminUsers: 0
+    });
+    const withExtraAdmins = computeCommunityQuote({
+      tier: "Advanced",
+      numberOfMarkets: 1,
+      communitySizePerMarket: 2000,
+      additionalAdminUsers: 50
+    });
+    expect(withExtraAdmins.totalAnnual).toBe(base.totalAnnual);
+  });
+
+  it("charges $500/user for additional admin users on tiers with a finite included count", () => {
+    const base = computeCommunityQuote({
+      tier: "DIY",
+      numberOfMarkets: 1,
+      communitySizePerMarket: 1000,
+      additionalAdminUsers: 0
+    });
+    const withExtraAdmins = computeCommunityQuote({
+      tier: "DIY",
+      numberOfMarkets: 1,
+      communitySizePerMarket: 1000,
+      additionalAdminUsers: 3
+    });
+    expect(withExtraAdmins.totalAnnual - base.totalAnnual).toBe(1500);
+  });
+
+  it("throws for an unknown tier", () => {
+    expect(() =>
+      computeCommunityQuote({ tier: "Nope", numberOfMarkets: 1 })
+    ).toThrow();
   });
 });
 
 describe("getDiscountGuidance", () => {
-  it("returns the applicable guidance band for the location count", () => {
-    expect(getDiscountGuidance(50)).toMatch(/20-25%/);
-    expect(getDiscountGuidance(300)).toMatch(/20-30%/);
-    expect(getDiscountGuidance(600)).toMatch(/25-35%/);
-    expect(getDiscountGuidance(1000)).toMatch(/30-40%/);
+  it("returns guidance consistent with the 10%-capped modeled discount", () => {
+    expect(getDiscountGuidance()).toMatch(/10%/);
   });
 });
