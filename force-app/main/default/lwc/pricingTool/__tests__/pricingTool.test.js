@@ -1,5 +1,19 @@
 import { createElement } from "@lwc/engine-dom";
+import { getRecord } from "lightning/uiRecordApi";
 import PricingTool from "c/pricingTool";
+import getExistingLineItems from "@salesforce/apex/PricingToolController.getExistingLineItems";
+import {
+  computeBaseQuote,
+  computeRatingsReviews,
+  computeCommunityQuote,
+  COMMUNITY_TIER_SPECS
+} from "c/pricingEngine";
+
+const IGNITE_DIGITAL_FLAT_FEE = 40000;
+
+function round2(value) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
 
 async function flush() {
   return Promise.resolve();
@@ -509,6 +523,128 @@ describe("c-pricing-tool", () => {
     expect(rows.length).toBe(2);
   });
 
+  it("automatically includes Ignite CX (locking the toggle) once a base subscription is added, since the Plan is the same product as Ignite CX", async () => {
+    const element = createTool();
+    await flush();
+
+    const includeBaseToggle = element.shadowRoot.querySelector(
+      '[data-id="include-base-subscription-toggle"]'
+    );
+    includeBaseToggle.checked = true;
+    includeBaseToggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const igniteCxToggle = element.shadowRoot.querySelector(
+      '[data-id="ignite-cx-toggle"]'
+    );
+    expect(igniteCxToggle.checked).toBe(true);
+    expect(igniteCxToggle.disabled).toBe(true);
+
+    let rows = element.shadowRoot.querySelectorAll(
+      ".slds-theme_shade table tbody tr"
+    );
+    expect(rows.length).toBe(1);
+    expect(rows[0].textContent).toContain("Pro/Advanced");
+    expect(rows[0].textContent).toContain("(includes Ignite CX)");
+
+    includeBaseToggle.checked = false;
+    includeBaseToggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    expect(igniteCxToggle.disabled).toBe(false);
+
+    rows = element.shadowRoot.querySelectorAll(
+      ".slds-theme_shade table tbody tr"
+    );
+    expect(rows.length).toBe(1);
+    expect(rows[0].textContent).toContain("Ignite CX");
+  });
+
+  it("prices Ignite Digital as a flat $40,000/year line item", async () => {
+    const element = createTool();
+    await flush();
+
+    const igniteDigitalToggle = element.shadowRoot.querySelector(
+      '[data-id="ignite-digital-toggle"]'
+    );
+    igniteDigitalToggle.checked = true;
+    igniteDigitalToggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const row = element.shadowRoot.querySelector(
+      ".slds-theme_shade table tbody tr"
+    );
+    expect(row.textContent).toContain("Ignite Digital");
+    expect(
+      row.querySelector("lightning-formatted-number").value
+    ).toBe(40000);
+  });
+
+  it("rolls Ratings & Reviews, Ignite Communities, and Ignite Digital into the Quoted Price section's totals, not just the base package", async () => {
+    const element = createTool();
+    await flush();
+
+    const includeBaseToggle = element.shadowRoot.querySelector(
+      '[data-id="include-base-subscription-toggle"]'
+    );
+    includeBaseToggle.checked = true;
+    includeBaseToggle.dispatchEvent(new CustomEvent("change"));
+
+    const locationsInput = element.shadowRoot.querySelector(
+      '[data-id="locations-input"]'
+    );
+    locationsInput.value = 500;
+    locationsInput.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const rrToggle = element.shadowRoot.querySelector('[data-id="rr-toggle"]');
+    rrToggle.checked = true;
+    rrToggle.dispatchEvent(new CustomEvent("change"));
+
+    const igniteCommunitiesToggle = element.shadowRoot.querySelector(
+      '[data-id="ignite-communities-toggle"]'
+    );
+    igniteCommunitiesToggle.checked = true;
+    igniteCommunitiesToggle.dispatchEvent(new CustomEvent("change"));
+
+    const igniteDigitalToggle = element.shadowRoot.querySelector(
+      '[data-id="ignite-digital-toggle"]'
+    );
+    igniteDigitalToggle.checked = true;
+    igniteDigitalToggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const baseAnnual = computeBaseQuote("Pro/Advanced", 500, "36").totalAnnual;
+    const rrAnnual = computeRatingsReviews("pro", 500).annual;
+    const communityAnnual = computeCommunityQuote({
+      tier: "DIY",
+      numberOfMarkets: 1,
+      communitySizePerMarket: COMMUNITY_TIER_SPECS.DIY.includedCommunitySize,
+      additionalAgileProjects: 0,
+      additionalConsultancyProjects: 0,
+      additionalAdminUsers: 0
+    }).totalAnnual;
+    const expectedAnnual = round2(
+      baseAnnual + rrAnnual + communityAnnual + IGNITE_DIGITAL_FLAT_FEE
+    );
+    const expectedMonthly = Math.round(expectedAnnual / 12);
+    const expectedPerLocation = round2(expectedMonthly / 500);
+
+    expect(
+      element.shadowRoot.querySelector('[data-id="quoted-price-annual"]')
+        .value
+    ).toBe(expectedAnnual);
+    expect(
+      element.shadowRoot.querySelector('[data-id="quoted-price-monthly"]')
+        .value
+    ).toBe(expectedMonthly);
+    expect(
+      element.shadowRoot.querySelector(
+        '[data-id="quoted-price-per-location"]'
+      ).value
+    ).toBe(expectedPerLocation);
+  });
+
   it("shows 'No products selected yet' when nothing is toggled on in a custom quote", async () => {
     const element = createTool();
     await flush();
@@ -527,5 +663,180 @@ describe("c-pricing-tool", () => {
     expect(
       element.shadowRoot.querySelector(".slds-theme_shade").textContent
     ).toContain("No products selected yet");
+  });
+
+  it("pre-fills Plan, locations, and AgentTrack from the Opportunity's existing products", async () => {
+    const element = createTool();
+    element.recordId = "006000000000001AAA";
+    await flush();
+
+    getExistingLineItems.emit([
+      {
+        productCode: "BASE-PRO-ADV",
+        quantity: 1,
+        unitPrice: 330480,
+        description: "Pro/Advanced — 1000 locations"
+      },
+      {
+        productCode: "AGENTTRACK-WEB",
+        quantity: 1,
+        unitPrice: 25000,
+        description: "AgentTrack (Web Only) — 5 agents"
+      }
+    ]);
+    await flush();
+
+    const locationsInput = element.shadowRoot.querySelector(
+      '[data-id="locations-input"]'
+    );
+    expect(locationsInput.value).toBe(1000);
+
+    const planCombobox = element.shadowRoot.querySelector(
+      '[data-id="plan-combobox"]'
+    );
+    expect(planCombobox.value).toBe("Pro/Advanced");
+
+    const includeBaseToggle = element.shadowRoot.querySelector(
+      '[data-id="include-base-subscription-toggle"]'
+    );
+    expect(includeBaseToggle.checked).toBe(true);
+
+    const agentVariantCombobox = element.shadowRoot.querySelector(
+      '[data-id="agent-track-variant"]'
+    );
+    expect(agentVariantCombobox.value).toBe("web");
+
+    const agentCountInput = element.shadowRoot.querySelector(
+      '[data-id="agent-count-input"]'
+    );
+    expect(agentCountInput.value).toBe(5);
+  });
+
+  it("pre-fills the Ignite CX toggle from the '(includes Ignite CX)' marker on the base package line, since there's no separate line item for it anymore", async () => {
+    const element = createTool();
+    element.recordId = "006000000000001AAA";
+    await flush();
+
+    getExistingLineItems.emit([
+      {
+        productCode: "BASE-PRO-ADV",
+        quantity: 1,
+        unitPrice: 330480,
+        description: "Pro/Advanced — 1000 locations (includes Ignite CX)"
+      }
+    ]);
+    await flush();
+
+    const igniteCxToggle = element.shadowRoot.querySelector(
+      '[data-id="ignite-cx-toggle"]'
+    );
+    expect(igniteCxToggle.checked).toBe(true);
+
+    const locationsInput = element.shadowRoot.querySelector(
+      '[data-id="locations-input"]'
+    );
+    expect(locationsInput.value).toBe(1000);
+  });
+
+  it("pre-fills Ignite Communities' tier, markets, and size from the existing line item", async () => {
+    const element = createTool();
+    element.recordId = "006000000000001AAA";
+    await flush();
+
+    getExistingLineItems.emit([
+      {
+        productCode: "IGNITE-COMMUNITIES",
+        quantity: 1,
+        unitPrice: 217627.9,
+        description: "Ignite Communities — Advanced, 1 market(s), 2000/market"
+      }
+    ]);
+    await flush();
+
+    const igniteCommunitiesToggle = element.shadowRoot.querySelector(
+      '[data-id="ignite-communities-toggle"]'
+    );
+    expect(igniteCommunitiesToggle.checked).toBe(true);
+
+    const tierCombobox = element.shadowRoot.querySelector(
+      '[data-id="community-tier-combobox"]'
+    );
+    expect(tierCombobox.value).toBe("Advanced");
+
+    const sizeInput = element.shadowRoot.querySelector(
+      '[data-id="community-size-input"]'
+    );
+    expect(sizeInput.value).toBe(2000);
+  });
+
+  it("does not pre-fill anything when the Opportunity has no existing SMG Price Book products", async () => {
+    const element = createTool();
+    element.recordId = "006000000000001AAA";
+    await flush();
+
+    getExistingLineItems.emit([]);
+    await flush();
+
+    const planCombobox = element.shadowRoot.querySelector(
+      '[data-id="plan-combobox"]'
+    );
+    expect(planCombobox.value).toBe("Pro/Advanced");
+
+    const includeBaseToggle = element.shadowRoot.querySelector(
+      '[data-id="include-base-subscription-toggle"]'
+    );
+    expect(includeBaseToggle.checked).toBe(false);
+  });
+
+  it("pre-fills Term, modeled discount, and locations from the Opportunity's stored fields", async () => {
+    const element = createTool();
+    element.recordId = "006000000000001AAA";
+    await flush();
+
+    getRecord.emit({
+      fields: {
+        Type: { value: "Existing Customer" },
+        Term_Length__c: { value: "24 months" },
+        Discount__c: { value: 7 },
+        Number_of_Locations__c: { value: 1500 }
+      }
+    });
+    await flush();
+
+    const termCombobox = element.shadowRoot.querySelector(
+      '[data-id="term-combobox"]'
+    );
+    expect(termCombobox.value).toBe("24");
+
+    const discountInput = element.shadowRoot.querySelector(
+      '[data-id="discount-input"]'
+    );
+    expect(discountInput.value).toBe(7);
+
+    const locationsInput = element.shadowRoot.querySelector(
+      '[data-id="locations-input"]'
+    );
+    expect(locationsInput.value).toBe(1500);
+  });
+
+  it("caps a pre-filled discount at 10% even if the stored value is higher", async () => {
+    const element = createTool();
+    element.recordId = "006000000000001AAA";
+    await flush();
+
+    getRecord.emit({
+      fields: {
+        Type: { value: "Existing Customer" },
+        Term_Length__c: { value: null },
+        Discount__c: { value: 15 },
+        Number_of_Locations__c: { value: null }
+      }
+    });
+    await flush();
+
+    const discountInput = element.shadowRoot.querySelector(
+      '[data-id="discount-input"]'
+    );
+    expect(discountInput.value).toBe(10);
   });
 });

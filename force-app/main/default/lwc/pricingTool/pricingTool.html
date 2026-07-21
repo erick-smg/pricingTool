@@ -68,10 +68,12 @@
           exact 1:1 match between these 4 packages and the 5 rate-card
           plans); review it rather than treating it as final. Ignite
           Communities uses its own calculator below (tier, markets,
-          community size) once toggled on. Ignite EX and Ignite Digital
-          still have no pricing yet (shown as $0 placeholders). Case
-          management isn't wired into pricing at all; see the Discovery
-          Guide tab.
+          community size) once toggled on, and Ignite Digital is a flat
+          $40,000/year. Ignite CX only bills as its own line on a
+          standalone quote — with a base subscription included, its cost
+          is already folded into the base package price. Ignite EX still
+          has no pricing yet (shown as a $0 placeholder). Case management
+          isn't wired into pricing at all; see the Discovery Guide tab.
         </div>
       </template>
 
@@ -307,8 +309,9 @@
               <lightning-input
                 data-id="ignite-cx-toggle"
                 type="checkbox"
-                label="Ignite CX (Location Survey)"
+                label={igniteCxToggleLabel}
                 checked={igniteCxEnabled}
+                disabled={igniteCxToggleDisabled}
                 onchange={handleIgniteCxToggle}
               ></lightning-input>
             </lightning-layout-item>
@@ -334,7 +337,7 @@
               <lightning-input
                 data-id="ignite-digital-toggle"
                 type="checkbox"
-                label="Ignite Digital (price TBD)"
+                label="Ignite Digital ($40,000/year)"
                 checked={igniteDigitalEnabled}
                 onchange={handleIgniteDigitalToggle}
               ></lightning-input>
@@ -507,6 +510,7 @@
                 <p class="slds-text-title">Per Location / Month</p>
                 <p class="slds-text-heading_medium">
                   <lightning-formatted-number
+                    data-id="quoted-price-per-location"
                     value={listPricePerLocationPerMonth}
                     format-style="currency"
                     currency-code="USD"
@@ -517,6 +521,7 @@
                 <p class="slds-text-title">Monthly</p>
                 <p class="slds-text-heading_medium">
                   <lightning-formatted-number
+                    data-id="quoted-price-monthly"
                     value={listMonthly}
                     format-style="currency"
                     currency-code="USD"
@@ -527,6 +532,7 @@
                 <p class="slds-text-title">Annual</p>
                 <p class="slds-text-heading_medium">
                   <lightning-formatted-number
+                    data-id="quoted-price-annual"
                     value={listAnnual}
                     format-style="currency"
                     currency-code="USD"
@@ -627,9 +633,12 @@
             Plan mapping is a first guess (there's no exact 1:1 match
             between these 4 packages and the 5 rate-card plans) and should
             be reviewed, not treated as final. Ignite Communities is priced
-            via its own tier/market/community-size calculator. Ignite EX
-            and Ignite Digital still have no pricing yet (shown as $0
-            placeholders). Case management isn't wired into pricing
+            via its own tier/market/community-size calculator, and Ignite
+            Digital is a flat $40,000/year. Ignite CX only appears as its
+            own line item on a standalone quote — when a base subscription
+            is included, its cost is already folded into the base package
+            price. Ignite EX still has no pricing yet (shown as a $0
+            placeholder). Case management isn't wired into pricing
             anywhere in this tool yet.
           </p>
 

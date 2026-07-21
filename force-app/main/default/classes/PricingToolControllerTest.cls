@@ -74,7 +74,10 @@ private class PricingToolControllerTest {
     PricingToolController.SyncResult result = PricingToolController.syncLineItems(
       opp.Id,
       JSON.serialize(new List<PricingToolController.LineItemRequest>{ request }),
-      50
+      50,
+      '36 months (standard)',
+      5,
+      1000
     );
     Test.stopTest();
 
@@ -82,12 +85,20 @@ private class PricingToolControllerTest {
     System.assertEquals(60000, result.totalAmount);
 
     Opportunity updatedOpp = [
-      SELECT Pricebook2Id, Rate_per_Location__c
+      SELECT
+        Pricebook2Id,
+        Rate_per_Location__c,
+        Term_Length__c,
+        Discount__c,
+        Number_of_Locations__c
       FROM Opportunity
       WHERE Id = :opp.Id
     ];
     System.assertEquals(smgPricebook.Id, updatedOpp.Pricebook2Id);
     System.assertEquals(50, updatedOpp.Rate_per_Location__c);
+    System.assertEquals('36 months (standard)', updatedOpp.Term_Length__c);
+    System.assertEquals(5, updatedOpp.Discount__c);
+    System.assertEquals(1000, updatedOpp.Number_of_Locations__c);
 
     List<OpportunityLineItem> lines = [
       SELECT Id, UnitPrice, Quantity
@@ -114,7 +125,10 @@ private class PricingToolControllerTest {
     PricingToolController.syncLineItems(
       opp.Id,
       JSON.serialize(new List<PricingToolController.LineItemRequest>{ firstRequest }),
-      50
+      50,
+      '36 months (standard)',
+      0,
+      500
     );
 
     PricingToolController.LineItemRequest secondRequest = new PricingToolController.LineItemRequest();
@@ -126,7 +140,10 @@ private class PricingToolControllerTest {
     PricingToolController.syncLineItems(
       opp.Id,
       JSON.serialize(new List<PricingToolController.LineItemRequest>{ secondRequest }),
-      75
+      75,
+      '24 months',
+      0,
+      500
     );
     Test.stopTest();
 
@@ -148,7 +165,10 @@ private class PricingToolControllerTest {
       PricingToolController.syncLineItems(
         opp.Id,
         JSON.serialize(new List<PricingToolController.LineItemRequest>()),
-        50
+        50,
+        '36 months (standard)',
+        0,
+        0
       );
     } catch (AuraHandledException e) {
       threw = true;
@@ -170,7 +190,10 @@ private class PricingToolControllerTest {
       PricingToolController.syncLineItems(
         opp.Id,
         JSON.serialize(new List<PricingToolController.LineItemRequest>{ request }),
-        50
+        50,
+        '36 months (standard)',
+        0,
+        100
       );
     } catch (AuraHandledException e) {
       threw = true;
@@ -208,7 +231,10 @@ private class PricingToolControllerTest {
       PricingToolController.syncLineItems(
         opp.Id,
         JSON.serialize(new List<PricingToolController.LineItemRequest>{ request }),
-        50
+        50,
+        '36 months (standard)',
+        0,
+        100
       );
     } catch (AuraHandledException e) {
       threw = true;
@@ -234,11 +260,84 @@ private class PricingToolControllerTest {
       PricingToolController.syncLineItems(
         opp.Id,
         JSON.serialize(new List<PricingToolController.LineItemRequest>{ request }),
-        50
+        50,
+        '36 months (standard)',
+        0,
+        100
       );
     } catch (AuraHandledException e) {
       threw = true;
     }
     System.assertEquals(true, threw);
+  }
+
+  @isTest
+  static void getExistingLineItems_returnsLinesWhenOnSmgPricebook() {
+    Product2 product = createProduct('BASE-PRO-ADV');
+    createStandardPricebookEntry(product.Id, 100);
+    Pricebook2 smgPricebook = createSmgPricebook();
+    createPricebookEntry(smgPricebook.Id, product.Id, 100);
+    Opportunity opp = createOpportunity();
+
+    PricingToolController.LineItemRequest request = new PricingToolController.LineItemRequest();
+    request.productCode = 'BASE-PRO-ADV';
+    request.quantity = 1;
+    request.unitPrice = 330480;
+    request.description = 'Pro/Advanced — 1000 locations';
+    PricingToolController.syncLineItems(
+      opp.Id,
+      JSON.serialize(new List<PricingToolController.LineItemRequest>{ request }),
+      28,
+      '36 months (standard)',
+      0,
+      1000
+    );
+
+    Test.startTest();
+    List<PricingToolController.ExistingLineItem> results = PricingToolController.getExistingLineItems(
+      opp.Id
+    );
+    Test.stopTest();
+
+    System.assertEquals(1, results.size());
+    System.assertEquals('BASE-PRO-ADV', results[0].productCode);
+    System.assertEquals(330480, results[0].unitPrice);
+    System.assertEquals('Pro/Advanced — 1000 locations', results[0].description);
+  }
+
+  @isTest
+  static void getExistingLineItems_returnsEmptyForOpportunityWithNoPricebook() {
+    Opportunity opp = createOpportunity();
+
+    List<PricingToolController.ExistingLineItem> results = PricingToolController.getExistingLineItems(
+      opp.Id
+    );
+
+    System.assertEquals(0, results.size());
+  }
+
+  @isTest
+  static void getExistingLineItems_returnsEmptyForOpportunityOnADifferentPricebook() {
+    createSmgPricebook();
+    Opportunity opp = createOpportunity();
+    opp.Pricebook2Id = Test.getStandardPricebookId();
+    update opp;
+
+    List<PricingToolController.ExistingLineItem> results = PricingToolController.getExistingLineItems(
+      opp.Id
+    );
+
+    System.assertEquals(0, results.size());
+  }
+
+  @isTest
+  static void getExistingLineItems_returnsEmptyWhenSmgPricebookDoesNotExist() {
+    Opportunity opp = createOpportunity();
+
+    List<PricingToolController.ExistingLineItem> results = PricingToolController.getExistingLineItems(
+      opp.Id
+    );
+
+    System.assertEquals(0, results.size());
   }
 }

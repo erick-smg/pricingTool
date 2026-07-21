@@ -87,8 +87,14 @@ export const ADD_ON_RATES = {
 export const CASE_MANAGEMENT_FEE = 7500;
 
 // Ignite CX (formerly "Location Survey") is a distinct SMG product/price-book line item,
-// not part of the New Logo memo - rate carried over unchanged from the prior model.
+// not part of the New Logo memo - rate carried over unchanged from the prior model. Only
+// billed as its own line on a standalone (no base subscription) quote - when a base
+// subscription is also being quoted, Ignite CX's location cost is already folded into the
+// base package price, so the LWC skips adding a separate line item for it.
 export const IGNITE_CX_RATE_PER_LOCATION_PER_MONTH = 17;
+
+// Ignite Digital has no per-location or per-market rate card yet - quoted as a flat annual fee.
+export const IGNITE_DIGITAL_FLAT_FEE = 40000;
 
 // Call Center WM - AgentTrack call-center add-on.
 export const CALL_CENTER = {
