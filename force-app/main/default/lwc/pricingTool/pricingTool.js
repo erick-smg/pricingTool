@@ -14,7 +14,6 @@ import {
   RATINGS_REVIEWS_TIER_KEYS,
   RATINGS_REVIEWS_TIER_LABELS,
   MANAGED_LISTING_MANAGEMENT_REFERENCE,
-  IGNITE_CX_RATE_PER_LOCATION_PER_MONTH,
   IGNITE_DIGITAL_FLAT_FEE,
   CASE_MANAGEMENT_FEE,
   COMMUNITY_TIERS,
@@ -367,10 +366,10 @@ export default class PricingTool extends LightningElement {
       : "Ignite CX (Location Survey)";
   }
 
+  // Ignite CX is priced off the selected Plan's rate card - same computeBaseQuote result
+  // as the base subscription itself, so switching Plan (or Term) always re-prices it.
   get igniteCxAnnual() {
-    return round2(
-      Number(this.locations) * IGNITE_CX_RATE_PER_LOCATION_PER_MONTH * 12
-    );
+    return this.baseQuote.totalAnnual;
   }
 
   get communityTierSpec() {
@@ -439,6 +438,13 @@ export default class PricingTool extends LightningElement {
 
   get baseQuote() {
     return computeBaseQuote(this.selectedPlan, this.locations, this.termMonths);
+  }
+
+  // The Quoted Price summary is meaningful whenever something is actually priced off the
+  // Plan's rate card - the base subscription itself, or a standalone Ignite CX quote (which
+  // now shares the same rate card).
+  get showQuotedPriceSummary() {
+    return this.includeBaseSubscription || this.igniteCxEnabled;
   }
 
   get addOnsResult() {
@@ -836,8 +842,20 @@ export default class PricingTool extends LightningElement {
     }
   }
 
+  // Picking a Plan directly (not via Package) resets its default add-on bundle: Standard
+  // plans default to Ignite CX only, Pro plans default to CX + Ratings & Reviews + Ignite
+  // Digital. Solution Support Only has no default bundle - toggles are left as-is.
   handlePlanChange(event) {
     this.selectedPlan = event.detail.value;
+    if (this.selectedPlan.startsWith("Standard/")) {
+      this.igniteCxEnabled = true;
+      this.ratingsReviewsEnabled = false;
+      this.igniteDigitalEnabled = false;
+    } else if (this.selectedPlan.startsWith("Pro/")) {
+      this.igniteCxEnabled = true;
+      this.ratingsReviewsEnabled = true;
+      this.igniteDigitalEnabled = true;
+    }
   }
 
   handleTermChange(event) {

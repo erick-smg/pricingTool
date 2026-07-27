@@ -49,9 +49,11 @@ export const LOCATION_BANDS = [
   }
 ];
 
-// Rate Card sheet, row 16 - annual minimum floors by service type.
+// Rate Card sheet, row 16 - annual minimum floors by service type. Advanced plans keep the
+// $80,000 full-service floor; Foundational plans get a lower $60,000 floor.
 export const ANNUAL_MINIMUM_FLOOR = {
-  fullService: 80000,
+  advanced: 80000,
+  foundational: 60000,
   supportOnly: 36000
 };
 
@@ -87,11 +89,10 @@ export const ADD_ON_RATES = {
 export const CASE_MANAGEMENT_FEE = 7500;
 
 // Ignite CX (formerly "Location Survey") is a distinct SMG product/price-book line item,
-// not part of the New Logo memo - rate carried over unchanged from the prior model. Only
-// billed as its own line on a standalone (no base subscription) quote - when a base
-// subscription is also being quoted, Ignite CX's location cost is already folded into the
-// base package price, so the LWC skips adding a separate line item for it.
-export const IGNITE_CX_RATE_PER_LOCATION_PER_MONTH = 17;
+// priced off the selected Plan's rate card (computeBaseQuote) - billed as its own line only
+// on a standalone (no base subscription) quote. When a base subscription is also being
+// quoted, Ignite CX's location cost is already folded into the base package price, so the
+// LWC skips adding a separate line item for it.
 
 // Ignite Digital has no per-location or per-market rate card yet - quoted as a flat annual fee.
 export const IGNITE_DIGITAL_FLAT_FEE = 40000;
@@ -386,6 +387,15 @@ function getTermPremium(termMonths) {
   return term ? term.ratePremium : 0;
 }
 
+function getAnnualFloor(plan) {
+  if (plan === SOLUTION_SUPPORT_ONLY_PLAN) {
+    return ANNUAL_MINIMUM_FLOOR.supportOnly;
+  }
+  return plan.includes("Foundational")
+    ? ANNUAL_MINIMUM_FLOOR.foundational
+    : ANNUAL_MINIMUM_FLOOR.advanced;
+}
+
 /**
  * Computes the base package quote for a given plan, location count, and term length.
  * One continuous rate card covers every deal size (Recommended Rate Card sheet) - locations
@@ -405,10 +415,7 @@ export function computeBaseQuote(plan, locations, termMonths) {
     band.ratePerLocationPerMonth * multiplier * (1 + termPremium)
   );
   const rawAnnual = round2(listRatePerLocationPerMonth * safeLocations * 12);
-  const annualFloor =
-    plan === SOLUTION_SUPPORT_ONLY_PLAN
-      ? ANNUAL_MINIMUM_FLOOR.supportOnly
-      : ANNUAL_MINIMUM_FLOOR.fullService;
+  const annualFloor = getAnnualFloor(plan);
   const totalAnnual = Math.max(rawAnnual, annualFloor);
   const pricePerLocationPerMonth = round2(totalAnnual / safeLocations / 12);
 

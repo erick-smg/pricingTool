@@ -380,6 +380,155 @@ describe("c-pricing-tool", () => {
     expect(banner.textContent).toContain("Ignite CX");
   });
 
+  it("prices a standalone Ignite CX quote off the selected Plan's rate card, and re-prices it when the Plan changes", async () => {
+    const element = createTool();
+    await flush();
+
+    const locationsInput = element.shadowRoot.querySelector(
+      '[data-id="locations-input"]'
+    );
+    locationsInput.value = 500;
+    locationsInput.dispatchEvent(new CustomEvent("change"));
+
+    const igniteCxToggle = element.shadowRoot.querySelector(
+      '[data-id="ignite-cx-toggle"]'
+    );
+    igniteCxToggle.checked = true;
+    igniteCxToggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const proAdvancedAnnual = computeBaseQuote(
+      "Pro/Advanced",
+      500,
+      "36"
+    ).totalAnnual;
+    const proAdvancedMonthly = Math.round(proAdvancedAnnual / 12);
+    const proAdvancedPerLocation = round2(proAdvancedMonthly / 500);
+
+    let perLocationEl = element.shadowRoot.querySelector(
+      '[data-id="quoted-price-per-location"]'
+    );
+    expect(perLocationEl).not.toBeNull();
+    expect(perLocationEl.value).toBe(proAdvancedPerLocation);
+
+    const planCombobox = element.shadowRoot.querySelector(
+      '[data-id="plan-combobox"]'
+    );
+    planCombobox.dispatchEvent(
+      new CustomEvent("change", { detail: { value: "Standard/Foundational" } })
+    );
+    await flush();
+
+    const standardFoundationalAnnual = computeBaseQuote(
+      "Standard/Foundational",
+      500,
+      "36"
+    ).totalAnnual;
+    const standardFoundationalMonthly = Math.round(
+      standardFoundationalAnnual / 12
+    );
+    const standardFoundationalPerLocation = round2(
+      standardFoundationalMonthly / 500
+    );
+
+    perLocationEl = element.shadowRoot.querySelector(
+      '[data-id="quoted-price-per-location"]'
+    );
+    expect(perLocationEl.value).toBe(standardFoundationalPerLocation);
+    expect(standardFoundationalPerLocation).not.toBe(proAdvancedPerLocation);
+  });
+
+  it("defaults to Ignite CX only when a Standard plan is selected, clearing Ratings & Reviews and Ignite Digital", async () => {
+    const element = createTool();
+    await flush();
+
+    const rrToggle = element.shadowRoot.querySelector('[data-id="rr-toggle"]');
+    rrToggle.checked = true;
+    rrToggle.dispatchEvent(new CustomEvent("change"));
+
+    const igniteDigitalToggle = element.shadowRoot.querySelector(
+      '[data-id="ignite-digital-toggle"]'
+    );
+    igniteDigitalToggle.checked = true;
+    igniteDigitalToggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const planCombobox = element.shadowRoot.querySelector(
+      '[data-id="plan-combobox"]'
+    );
+    planCombobox.dispatchEvent(
+      new CustomEvent("change", { detail: { value: "Standard/Advanced" } })
+    );
+    await flush();
+
+    const igniteCxToggle = element.shadowRoot.querySelector(
+      '[data-id="ignite-cx-toggle"]'
+    );
+    expect(igniteCxToggle.checked).toBe(true);
+    expect(
+      element.shadowRoot.querySelector('[data-id="rr-toggle"]').checked
+    ).toBe(false);
+    expect(
+      element.shadowRoot.querySelector('[data-id="ignite-digital-toggle"]')
+        .checked
+    ).toBe(false);
+  });
+
+  it("defaults to Ignite CX + Ratings & Reviews + Ignite Digital when a Pro plan is selected", async () => {
+    const element = createTool();
+    await flush();
+
+    const planCombobox = element.shadowRoot.querySelector(
+      '[data-id="plan-combobox"]'
+    );
+    planCombobox.dispatchEvent(
+      new CustomEvent("change", { detail: { value: "Pro/Foundational" } })
+    );
+    await flush();
+
+    expect(
+      element.shadowRoot.querySelector('[data-id="ignite-cx-toggle"]').checked
+    ).toBe(true);
+    expect(
+      element.shadowRoot.querySelector('[data-id="rr-toggle"]').checked
+    ).toBe(true);
+    expect(
+      element.shadowRoot.querySelector('[data-id="ignite-digital-toggle"]')
+        .checked
+    ).toBe(true);
+  });
+
+  it("leaves the CX / Ratings & Reviews / Ignite Digital toggles untouched when Solution Support Only is selected", async () => {
+    const element = createTool();
+    await flush();
+
+    const igniteDigitalToggle = element.shadowRoot.querySelector(
+      '[data-id="ignite-digital-toggle"]'
+    );
+    igniteDigitalToggle.checked = true;
+    igniteDigitalToggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const planCombobox = element.shadowRoot.querySelector(
+      '[data-id="plan-combobox"]'
+    );
+    planCombobox.dispatchEvent(
+      new CustomEvent("change", { detail: { value: "Solution Support Only" } })
+    );
+    await flush();
+
+    expect(
+      element.shadowRoot.querySelector('[data-id="ignite-cx-toggle"]').checked
+    ).toBe(false);
+    expect(
+      element.shadowRoot.querySelector('[data-id="rr-toggle"]').checked
+    ).toBe(false);
+    expect(
+      element.shadowRoot.querySelector('[data-id="ignite-digital-toggle"]')
+        .checked
+    ).toBe(true);
+  });
+
   it("shows the Ignite Communities calculator only when the toggle is on, defaulting to the DIY tier", async () => {
     const element = createTool();
     await flush();

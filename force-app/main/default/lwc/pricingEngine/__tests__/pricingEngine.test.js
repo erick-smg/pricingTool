@@ -40,11 +40,30 @@ describe("computeBaseQuote", () => {
     expect(computeBaseQuote("Pro/Advanced", 5001, 36).isCustomPricing).toBe(true);
   });
 
-  it("enforces the $80,000/year full-service annual minimum floor", () => {
+  it("enforces the $80,000/year Advanced annual minimum floor", () => {
     const result = computeBaseQuote("Pro/Advanced", 50, 36);
     // raw = 110 * 50 * 12 = 66,000, below the $80,000 floor
     expect(result.totalAnnual).toBe(80000);
     expect(result.floorApplied).toBe(true);
+  });
+
+  it("enforces the same $80,000/year floor on Standard/Advanced", () => {
+    const result = computeBaseQuote("Standard/Advanced", 50, 36);
+    // raw = 99 * 50 * 12 = 59,400, below the $80,000 floor
+    expect(result.totalAnnual).toBe(80000);
+    expect(result.floorApplied).toBe(true);
+  });
+
+  it("enforces the lower $60,000/year Foundational annual minimum floor", () => {
+    const proResult = computeBaseQuote("Pro/Foundational", 50, 36);
+    // raw = 91.3 * 50 * 12 = 54,780, below the $60,000 floor
+    expect(proResult.totalAnnual).toBe(60000);
+    expect(proResult.floorApplied).toBe(true);
+
+    const standardResult = computeBaseQuote("Standard/Foundational", 50, 36);
+    // raw = 82.5 * 50 * 12 = 49,500, below the $60,000 floor
+    expect(standardResult.totalAnnual).toBe(60000);
+    expect(standardResult.floorApplied).toBe(true);
   });
 
   it("enforces the lower $36,000/year Solution-Support-Only floor", () => {
