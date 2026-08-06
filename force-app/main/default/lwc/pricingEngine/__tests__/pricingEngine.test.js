@@ -7,32 +7,46 @@ import {
   computeRatingsReviews,
   computeCommunityQuote,
   getDiscountGuidance,
+  PLANS,
   LOCATION_BANDS,
-  PLAN_MULTIPLIERS
+  ANNUAL_MINIMUM_FLOOR
 } from "c/pricingEngine";
 
 describe("computeBaseQuote", () => {
-  it("matches the Recommended Rate Card sheet's Pro/Advanced band rates", () => {
-    expect(computeBaseQuote("Pro/Advanced", 50, 36).listRatePerLocationPerMonth).toBe(110);
-    expect(computeBaseQuote("Pro/Advanced", 110, 36).listRatePerLocationPerMonth).toBe(80);
+  it("matches the REVISED Pricing Table's Pro/Advanced $/location/month band rates", () => {
+    expect(computeBaseQuote("Pro/Advanced", 125, 36).listRatePerLocationPerMonth).toBe(80);
     expect(computeBaseQuote("Pro/Advanced", 225, 36).listRatePerLocationPerMonth).toBe(58);
-    expect(computeBaseQuote("Pro/Advanced", 450, 36).listRatePerLocationPerMonth).toBe(44);
-    expect(computeBaseQuote("Pro/Advanced", 900, 36).listRatePerLocationPerMonth).toBe(34);
-    expect(computeBaseQuote("Pro/Advanced", 1800, 36).listRatePerLocationPerMonth).toBe(27);
-    expect(computeBaseQuote("Pro/Advanced", 3500, 36).listRatePerLocationPerMonth).toBe(22);
-    expect(computeBaseQuote("Pro/Advanced", 6000, 36).listRatePerLocationPerMonth).toBe(18);
+    expect(computeBaseQuote("Pro/Advanced", 450, 36).listRatePerLocationPerMonth).toBeCloseTo(32.44, 2);
+    expect(computeBaseQuote("Pro/Advanced", 900, 36).listRatePerLocationPerMonth).toBeCloseTo(30.17, 2);
+    expect(computeBaseQuote("Pro/Advanced", 1800, 36).listRatePerLocationPerMonth).toBeCloseTo(27.15, 2);
+    expect(computeBaseQuote("Pro/Advanced", 3500, 36).listRatePerLocationPerMonth).toBeCloseTo(23.89, 2);
+    expect(computeBaseQuote("Pro/Advanced", 6000, 36).listRatePerLocationPerMonth).toBeCloseTo(20.55, 2);
   });
 
-  it("matches the Recommended Rate Card sheet's package multipliers in the 1-75 band", () => {
-    expect(computeBaseQuote("Standard/Advanced", 50, 36).listRatePerLocationPerMonth).toBe(99);
-    expect(computeBaseQuote("Pro/Foundational", 50, 36).listRatePerLocationPerMonth).toBe(91.3);
-    expect(computeBaseQuote("Standard/Foundational", 50, 36).listRatePerLocationPerMonth).toBe(82.5);
-    expect(computeBaseQuote("Solution Support Only", 50, 36).listRatePerLocationPerMonth).toBe(60.5);
+  it("matches the REVISED Pricing Table's per-plan rates in the 151-300 band", () => {
+    expect(computeBaseQuote("Standard/Advanced", 225, 36).listRatePerLocationPerMonth).toBe(52.2);
+    expect(computeBaseQuote("Pro/Foundational", 225, 36).listRatePerLocationPerMonth).toBe(48.14);
+    expect(computeBaseQuote("Standard/Foundational", 225, 36).listRatePerLocationPerMonth).toBe(43.5);
+    expect(computeBaseQuote("Solution Support Only", 225, 36).listRatePerLocationPerMonth).toBe(31.9);
   });
 
-  it("matches the Recommended Rate Card sheet's 2,501-5,000 band exactly (Jersey Mike's comparable)", () => {
+  it("prices the 1-100 location band as a flat annual fee, not a $/location/month rate", () => {
+    const flatFeesByPlan = {
+      "Pro/Advanced": 144000,
+      "Standard/Advanced": 120000,
+      "Pro/Foundational": 80000,
+      "Standard/Foundational": 60000,
+      "Solution Support Only": 44000
+    };
+    for (const plan of PLANS) {
+      expect(computeBaseQuote(plan, 50, 36).totalAnnual).toBe(flatFeesByPlan[plan]);
+      expect(computeBaseQuote(plan, 100, 36).totalAnnual).toBe(flatFeesByPlan[plan]);
+    }
+  });
+
+  it("matches the 2,501-5,000 band exactly for Pro/Advanced at 3,500 locations", () => {
     const result = computeBaseQuote("Pro/Advanced", 3500, 36);
-    expect(result.totalAnnual).toBeCloseTo(924000, 2);
+    expect(result.totalAnnual).toBe(1003380);
   });
 
   it("flags locations above 5,000 as custom pricing", () => {
@@ -40,50 +54,40 @@ describe("computeBaseQuote", () => {
     expect(computeBaseQuote("Pro/Advanced", 5001, 36).isCustomPricing).toBe(true);
   });
 
-  it("enforces the $80,000/year Advanced annual minimum floor", () => {
-    const result = computeBaseQuote("Pro/Advanced", 50, 36);
-    // raw = 110 * 50 * 12 = 66,000, below the $80,000 floor
-    expect(result.totalAnnual).toBe(80000);
-    expect(result.floorApplied).toBe(true);
+  it("defines the annual minimum floors by plan tier", () => {
+    expect(ANNUAL_MINIMUM_FLOOR.advanced).toBe(80000);
+    expect(ANNUAL_MINIMUM_FLOOR.foundational).toBe(60000);
+    expect(ANNUAL_MINIMUM_FLOOR.supportOnly).toBe(36000);
   });
 
-  it("enforces the same $80,000/year floor on Standard/Advanced", () => {
-    const result = computeBaseQuote("Standard/Advanced", 50, 36);
-    // raw = 99 * 50 * 12 = 59,400, below the $80,000 floor
-    expect(result.totalAnnual).toBe(80000);
-    expect(result.floorApplied).toBe(true);
-  });
-
-  it("enforces the lower $60,000/year Foundational annual minimum floor", () => {
-    const proResult = computeBaseQuote("Pro/Foundational", 50, 36);
-    // raw = 91.3 * 50 * 12 = 54,780, below the $60,000 floor
-    expect(proResult.totalAnnual).toBe(60000);
-    expect(proResult.floorApplied).toBe(true);
-
-    const standardResult = computeBaseQuote("Standard/Foundational", 50, 36);
-    // raw = 82.5 * 50 * 12 = 49,500, below the $60,000 floor
-    expect(standardResult.totalAnnual).toBe(60000);
-    expect(standardResult.floorApplied).toBe(true);
-  });
-
-  it("enforces the lower $36,000/year Solution-Support-Only floor", () => {
-    const result = computeBaseQuote("Solution Support Only", 50, 36);
-    // raw = 60.5 * 50 * 12 = 36,300, above its own $36,000 floor
-    expect(result.totalAnnual).toBeCloseTo(36300, 2);
-    expect(result.floorApplied).toBe(false);
+  it("never needs to apply the annual minimum floor under the new rate card - every plan's flat 1-100 fee already clears its own floor", () => {
+    for (const plan of PLANS) {
+      expect(computeBaseQuote(plan, 50, 36).floorApplied).toBe(false);
+    }
   });
 
   it("does not apply the floor once the raw annual clears it", () => {
     const result = computeBaseQuote("Pro/Advanced", 900, 36);
     expect(result.floorApplied).toBe(false);
-    expect(result.totalAnnual).toBeCloseTo(367200, 2);
+    expect(result.totalAnnual).toBe(325836);
   });
 
   it("applies the 24-month (+5%) and 12-month (+10%) term premiums", () => {
+    // Pro/Advanced 601-1,200 band rate (REVISED Pricing Table) - compare against this raw
+    // rate directly rather than the already-rounded 36-month result, since chaining two
+    // roundings (rate -> term36 -> *1.1) can drift past a tight toBeCloseTo tolerance.
+    const baseRate = 30.166875;
     const term36 = computeBaseQuote("Pro/Advanced", 900, 36).listRatePerLocationPerMonth;
     const term24 = computeBaseQuote("Pro/Advanced", 900, 24).listRatePerLocationPerMonth;
     const term12 = computeBaseQuote("Pro/Advanced", 900, 12).listRatePerLocationPerMonth;
-    expect(term24).toBeCloseTo(term36 * 1.05, 2);
+    expect(term36).toBeCloseTo(baseRate, 2);
+    expect(term24).toBeCloseTo(baseRate * 1.05, 2);
+    expect(term12).toBeCloseTo(baseRate * 1.1, 2);
+  });
+
+  it("applies the term premium to the flat 1-100 fee too", () => {
+    const term36 = computeBaseQuote("Pro/Advanced", 50, 36).totalAnnual;
+    const term12 = computeBaseQuote("Pro/Advanced", 50, 12).totalAnnual;
     expect(term12).toBeCloseTo(term36 * 1.1, 2);
   });
 
@@ -92,7 +96,7 @@ describe("computeBaseQuote", () => {
   });
 });
 
-describe("LOCATION_BANDS / PLAN_MULTIPLIERS", () => {
+describe("LOCATION_BANDS", () => {
   it("covers every location count from 1 upward with no gaps", () => {
     expect(LOCATION_BANDS[0].min).toBe(1);
     for (let i = 1; i < LOCATION_BANDS.length; i += 1) {
@@ -101,8 +105,15 @@ describe("LOCATION_BANDS / PLAN_MULTIPLIERS", () => {
     expect(LOCATION_BANDS[LOCATION_BANDS.length - 1].max).toBe(Infinity);
   });
 
-  it("anchors Pro/Advanced at a 1.0 multiplier", () => {
-    expect(PLAN_MULTIPLIERS["Pro/Advanced"]).toBe(1.0);
+  it("gives every plan a rate (flat fee or $/location/month) in every band", () => {
+    for (const band of LOCATION_BANDS) {
+      const rateMap = band.isFlatFee
+        ? band.flatAnnualFeeByPlan
+        : band.ratePerLocationPerMonthByPlan;
+      for (const plan of PLANS) {
+        expect(typeof rateMap[plan]).toBe("number");
+      }
+    }
   });
 });
 

@@ -1,7 +1,10 @@
 /**
  * Pure pricing calculations for the SMG New Logo Pricing Model (July 2026).
- * Transcribed from "New Logo Pricing Analysis & Rate Card.xlsx" and
- * "New Logo Pricing Strategy Memo.docx" (14 executed new-logo order forms, 2018-2026).
+ * Location-band rate card transcribed from "REVISED Pricing Table - RG - 7-27-2026.xlsx" -
+ * each plan has its own explicit $/location/month rate per band (not a flat multiplier off
+ * the Pro/Advanced anchor). Everything else transcribed from "New Logo Pricing Analysis &
+ * Rate Card.xlsx" and "New Logo Pricing Strategy Memo.docx" (14 executed new-logo order
+ * forms, 2018-2026).
  *
  * Replaces the prior "Developing a pricing tool - July 2026.xlsx" model: there is no more
  * Elite tier and no separate >1,250-location Enterprise branch - one continuous rate card
@@ -21,31 +24,109 @@ export const PLANS = [
 
 export const SOLUTION_SUPPORT_ONLY_PLAN = "Solution Support Only";
 
-// Rate Card sheet, row 4 header - anchor tier is Pro/Advanced; every other package is a
-// flat multiplier off the same location-band rate.
-export const PLAN_MULTIPLIERS = {
-  "Pro/Advanced": 1.0,
-  "Standard/Advanced": 0.9,
-  "Pro/Foundational": 0.83,
-  "Standard/Foundational": 0.75,
-  "Solution Support Only": 0.55
-};
-
-// Recommended Rate Card sheet, rows 5-12 - Pro/Advanced anchor $/location/month by band.
+// REVISED Pricing Table (RG, 2026-07-27) - each plan now has its own explicit $/location/month
+// rate per band (no longer a flat multiplier off the Pro/Advanced anchor - the ratio between
+// plans isn't constant across bands). The 1-100 band is a flat annual fee per plan, not a
+// $/location/month rate, per that table's note ("Change 'up to 100 locations' to be a
+// flat-rate, not $/loc./month").
 export const LOCATION_BANDS = [
-  { min: 1, max: 75, label: "1 - 75", ratePerLocationPerMonth: 110.0 },
-  { min: 76, max: 150, label: "76 - 150", ratePerLocationPerMonth: 80.0 },
-  { min: 151, max: 300, label: "151 - 300", ratePerLocationPerMonth: 58.0 },
-  { min: 301, max: 600, label: "301 - 600", ratePerLocationPerMonth: 44.0 },
-  { min: 601, max: 1200, label: "601 - 1,200", ratePerLocationPerMonth: 34.0 },
-  { min: 1201, max: 2500, label: "1,201 - 2,500", ratePerLocationPerMonth: 27.0 },
-  { min: 2501, max: 5000, label: "2,501 - 5,000", ratePerLocationPerMonth: 22.0 },
+  {
+    min: 1,
+    max: 100,
+    label: "1 - 100",
+    isFlatFee: true,
+    flatAnnualFeeByPlan: {
+      "Pro/Advanced": 144000,
+      "Standard/Advanced": 120000,
+      "Pro/Foundational": 80000,
+      "Standard/Foundational": 60000,
+      "Solution Support Only": 44000
+    }
+  },
+  {
+    min: 101,
+    max: 150,
+    label: "101 - 150",
+    ratePerLocationPerMonthByPlan: {
+      "Pro/Advanced": 80,
+      "Standard/Advanced": 72,
+      "Pro/Foundational": 66.4,
+      "Standard/Foundational": 60,
+      "Solution Support Only": 44
+    }
+  },
+  {
+    min: 151,
+    max: 300,
+    label: "151 - 300",
+    ratePerLocationPerMonthByPlan: {
+      "Pro/Advanced": 58,
+      "Standard/Advanced": 52.2,
+      "Pro/Foundational": 48.14,
+      "Standard/Foundational": 43.5,
+      "Solution Support Only": 31.9
+    }
+  },
+  {
+    min: 301,
+    max: 600,
+    label: "301 - 600",
+    ratePerLocationPerMonthByPlan: {
+      "Pro/Advanced": 32.4375,
+      "Standard/Advanced": 25,
+      "Pro/Foundational": 25.95,
+      "Standard/Foundational": 20,
+      "Solution Support Only": 18.5
+    }
+  },
+  {
+    min: 601,
+    max: 1200,
+    label: "601 - 1,200",
+    ratePerLocationPerMonthByPlan: {
+      "Pro/Advanced": 30.166875,
+      "Standard/Advanced": 23.25,
+      "Pro/Foundational": 24.1335,
+      "Standard/Foundational": 18.6,
+      "Solution Support Only": 17.5
+    }
+  },
+  {
+    min: 1201,
+    max: 2500,
+    label: "1,201 - 2,500",
+    ratePerLocationPerMonthByPlan: {
+      "Pro/Advanced": 27.1501875,
+      "Standard/Advanced": 20.925,
+      "Pro/Foundational": 21.72015,
+      "Standard/Foundational": 16.74,
+      "Solution Support Only": 14.85
+    }
+  },
+  {
+    min: 2501,
+    max: 5000,
+    label: "2,501 - 5,000",
+    ratePerLocationPerMonthByPlan: {
+      "Pro/Advanced": 23.892165,
+      "Standard/Advanced": 18.414,
+      "Pro/Foundational": 19.113732,
+      "Standard/Foundational": 14.7312,
+      "Solution Support Only": 12.1
+    }
+  },
   {
     min: 5001,
     max: Infinity,
     label: "5,000+ (custom)",
-    ratePerLocationPerMonth: 18.0,
-    isCustom: true
+    isCustom: true,
+    ratePerLocationPerMonthByPlan: {
+      "Pro/Advanced": 20.5472619,
+      "Standard/Advanced": 15.83604,
+      "Pro/Foundational": 16.43780952,
+      "Standard/Foundational": 12.668832,
+      "Solution Support Only": 9.9
+    }
   }
 ];
 
@@ -57,11 +138,9 @@ export const ANNUAL_MINIMUM_FLOOR = {
   supportOnly: 36000
 };
 
-// Rate Card sheet, row 17 - replaces the observed $0-$40,000 setup fee inconsistency.
+// Rate Card sheet, row 17 - flat, not scaled by committed locations.
 export const SETUP_FEE = {
-  base: 5000,
-  perLocation: 10,
-  cap: 40000
+  flat: 10000
 };
 
 // Rate Card sheet, row 18 - already the de facto standard in 9 of 12 subscription deals.
@@ -398,9 +477,10 @@ function getAnnualFloor(plan) {
 
 /**
  * Computes the base package quote for a given plan, location count, and term length.
- * One continuous rate card covers every deal size (Recommended Rate Card sheet) - locations
+ * One continuous rate card covers every deal size (REVISED Pricing Table) - locations
  * above 5,000 use the top ("custom") band rate but are flagged via isCustomPricing so the
- * UI can prompt for deal-desk review rather than silently auto-quoting.
+ * UI can prompt for deal-desk review rather than silently auto-quoting. Locations 1-100 use
+ * that band's flat annual fee instead of a $/location/month rate.
  */
 export function computeBaseQuote(plan, locations, termMonths) {
   if (!PLANS.includes(plan)) {
@@ -408,13 +488,21 @@ export function computeBaseQuote(plan, locations, termMonths) {
   }
   const safeLocations = Math.max(1, Number(locations) || 1);
   const band = findLocationBand(safeLocations);
-  const multiplier = PLAN_MULTIPLIERS[plan];
   const termPremium = getTermPremium(termMonths);
 
-  const listRatePerLocationPerMonth = round2(
-    band.ratePerLocationPerMonth * multiplier * (1 + termPremium)
-  );
-  const rawAnnual = round2(listRatePerLocationPerMonth * safeLocations * 12);
+  let rawAnnual;
+  let listRatePerLocationPerMonth;
+  if (band.isFlatFee) {
+    // 1-100 locations is a flat annual fee regardless of the actual count - not a
+    // $/location/month rate - so the "per location" figure is only ever a derived average.
+    rawAnnual = round2(band.flatAnnualFeeByPlan[plan] * (1 + termPremium));
+    listRatePerLocationPerMonth = round2(rawAnnual / safeLocations / 12);
+  } else {
+    listRatePerLocationPerMonth = round2(
+      band.ratePerLocationPerMonthByPlan[plan] * (1 + termPremium)
+    );
+    rawAnnual = round2(listRatePerLocationPerMonth * safeLocations * 12);
+  }
   const annualFloor = getAnnualFloor(plan);
   const totalAnnual = Math.max(rawAnnual, annualFloor);
   const pricePerLocationPerMonth = round2(totalAnnual / safeLocations / 12);
