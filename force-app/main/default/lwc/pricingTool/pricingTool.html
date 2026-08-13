@@ -13,40 +13,19 @@
             onchange={handleLocationsChange}
           ></lightning-input>
         </lightning-layout-item>
-        <lightning-layout-item size="4" padding="around-small">
-          <lightning-combobox
-            data-id="package-combobox"
-            label="Package"
-            value={selectedPackage}
-            options={packageOptions}
-            onchange={handlePackageChange}
-          ></lightning-combobox>
-        </lightning-layout-item>
-        <lightning-layout-item size="4" padding="around-small">
-          <lightning-input
-            data-id="include-base-subscription-toggle"
-            type="checkbox"
-            label="Include base subscription"
-            checked={includeBaseSubscription}
-            onchange={handleIncludeBaseSubscriptionToggle}
-          ></lightning-input>
+        <lightning-layout-item size="8" padding="around-small">
+          <p class="slds-text-title">Package</p>
+          <p class="slds-text-heading_small slds-m-bottom_x-small">
+            Ignite Platform
+          </p>
+          <p class="slds-text-body_small">
+            Included, for reference only — not selectable:
+            <template for:each={ignitePlatformItems} for:item="item">
+              <span key={item} class="slds-badge slds-m-right_xx-small">{item}</span>
+            </template>
+          </p>
         </lightning-layout-item>
       </lightning-layout>
-
-      <template if:false={includeBaseSubscription}>
-        <div
-          class="slds-text-body_small slds-m-bottom_small"
-          style="color: #706e6b"
-        >
-          Custom quote — the Plan, Term, Add-Ons, and AgentTrack below won't
-          be added to the Opportunity. Only the toggled items (Ignite CX,
-          Ignite EX, Ignite Communities, Ignite Digital, Case Management,
-          Ratings & Reviews, Setup Fee) will sync. Locations is only
-          required if Ignite CX or Ratings & Reviews is turned on, since
-          only those are priced per location — the setup fee still works
-          without it (it just skips the per-location portion of its fee).
-        </div>
-      </template>
 
       <template if:true={locationsMissing}>
         <div
@@ -57,37 +36,17 @@
         </div>
       </template>
 
-      <template if:true={selectedPackage}>
-        <div
-          class="slds-text-body_small slds-m-bottom_small"
-          style="color: #706e6b"
-        >
-          Pre-filled the Plan, Ratings & Reviews tier, Ignite CX, Ignite EX,
-          Ignite Communities, and Ignite Digital below as a starting point —
-          adjust freely. That Plan mapping is a first guess (there's no
-          exact 1:1 match between these 4 packages and the 5 rate-card
-          plans); review it rather than treating it as final. Ignite
-          Communities uses its own calculator below (tier, markets,
-          community size) once toggled on, and Ignite Digital is a flat
-          $40,000/year. Ignite CX only bills as its own line on a
-          standalone quote — with a base subscription included, its cost
-          is already folded into the base package price. Ignite EX still
-          has no pricing yet (shown as a $0 placeholder). Case management
-          isn't wired into pricing at all; see the Discovery Guide tab.
-        </div>
-      </template>
-
       <lightning-tabset variant="scoped">
         <!-- ============ QUOTE BUILDER ============ -->
         <lightning-tab label="Quote Builder">
           <lightning-layout multiple-rows="true">
             <lightning-layout-item size="6" padding="around-small">
               <lightning-combobox
-                data-id="plan-combobox"
-                label="Plan"
-                value={selectedPlan}
-                options={planOptions}
-                onchange={handlePlanChange}
+                data-id="service-tier-combobox"
+                label="Service Tier"
+                value={serviceTier}
+                options={serviceTierOptions}
+                onchange={handleServiceTierChange}
               ></lightning-combobox>
             </lightning-layout-item>
             <lightning-layout-item size="6" padding="around-small">
@@ -128,6 +87,16 @@
                 step="1"
                 onchange={handleAddOnQtyChange}
               ></lightning-input>
+              <template if:true={additionalSurveys}>
+                <lightning-checkbox-group
+                  data-id="additional-survey-types"
+                  label="Survey Types"
+                  options={additionalSurveyTypeOptions}
+                  value={additionalSurveyTypes}
+                  onchange={handleAdditionalSurveyTypesChange}
+                  class="slds-m-top_x-small"
+                ></lightning-checkbox-group>
+              </template>
             </lightning-layout-item>
             <lightning-layout-item size="4" padding="around-small">
               <lightning-input
@@ -157,6 +126,39 @@
                 label="Add'l Brands"
                 data-field="additionalBrands"
                 value={additionalBrands}
+                min="0"
+                step="1"
+                onchange={handleAddOnQtyChange}
+              ></lightning-input>
+            </lightning-layout-item>
+            <lightning-layout-item size="4" padding="around-small">
+              <lightning-input
+                type="number"
+                label="Add'l Performance ($12,000/unit)"
+                data-field="additionalPerformance"
+                value={additionalPerformance}
+                min="0"
+                step="1"
+                onchange={handleAddOnQtyChange}
+              ></lightning-input>
+            </lightning-layout-item>
+            <lightning-layout-item size="4" padding="around-small">
+              <lightning-input
+                type="number"
+                label="Add'l Agile ($15,000/unit)"
+                data-field="additionalAgile"
+                value={additionalAgile}
+                min="0"
+                step="1"
+                onchange={handleAddOnQtyChange}
+              ></lightning-input>
+            </lightning-layout-item>
+            <lightning-layout-item size="4" padding="around-small">
+              <lightning-input
+                type="number"
+                label="Add'l Consultative ($35,000/unit)"
+                data-field="additionalConsultative"
+                value={additionalConsultative}
                 min="0"
                 step="1"
                 onchange={handleAddOnQtyChange}
@@ -194,132 +196,32 @@
           <h3
             class="slds-text-heading_small slds-m-top_medium slds-m-bottom_x-small"
           >
-            AgentTrack (call center — select one)
-          </h3>
-          <lightning-layout multiple-rows="true">
-            <lightning-layout-item size="6" padding="around-small">
-              <lightning-combobox
-                data-id="agent-track-variant"
-                label="Variant"
-                value={agentTrackVariant}
-                options={agentTrackOptions}
-                onchange={handleAgentTrackVariantChange}
-              ></lightning-combobox>
-            </lightning-layout-item>
-            <lightning-layout-item size="6" padding="around-small">
-              <lightning-input
-                data-id="agent-count-input"
-                type="number"
-                label="Number of Agents"
-                value={agentCount}
-                min="0"
-                step="1"
-                disabled={agentTrackDisabled}
-                onchange={handleAgentCountChange}
-              ></lightning-input>
-            </lightning-layout-item>
-          </lightning-layout>
-          <p class="slds-m-top_x-small">
-            AgentTrack:
-            <lightning-formatted-number
-              value={callCenterResult.perLocPerMonth}
-              format-style="currency"
-              currency-code="USD"
-            ></lightning-formatted-number>
-            / Loc / Mo (<lightning-formatted-number
-              value={callCenterResult.annualTotal}
-              format-style="currency"
-              currency-code="USD"
-            ></lightning-formatted-number>
-            annual total)
-          </p>
-
-          <h3
-            class="slds-text-heading_small slds-m-top_medium slds-m-bottom_x-small"
-          >
-            Ratings & Reviews
-          </h3>
-          <lightning-input
-            data-id="rr-toggle"
-            type="checkbox"
-            label="Include Ratings & Reviews"
-            checked={ratingsReviewsEnabled}
-            onchange={handleRatingsReviewsToggle}
-            class="slds-m-bottom_small"
-          ></lightning-input>
-
-          <lightning-radio-group
-            data-id="rr-tier-radio-group"
-            label="Product Tier"
-            options={ratingsReviewsTierOptions}
-            value={ratingsReviewsTier}
-            disabled={ratingsReviewsDisabled}
-            onchange={handleRatingsReviewsTierChange}
-            class="slds-m-bottom_medium"
-          ></lightning-radio-group>
-
-          <template if:true={ratingsReviewsResult}>
-            <div class="slds-box slds-theme_default slds-m-bottom_medium">
-              <p>
-                Bracket:
-                <strong>{ratingsReviewsResult.bracket}</strong> locations
-              </p>
-              <lightning-layout multiple-rows="true">
-                <lightning-layout-item size="4" padding="around-small">
-                  <p class="slds-text-title">Rate / Loc / Mo</p>
-                  <p class="slds-text-heading_small">
-                    <lightning-formatted-number
-                      value={ratingsReviewsResult.ratePerMonth}
-                      format-style="currency"
-                      currency-code="USD"
-                    ></lightning-formatted-number>
-                  </p>
-                </lightning-layout-item>
-                <lightning-layout-item size="4" padding="around-small">
-                  <p class="slds-text-title">Monthly</p>
-                  <p class="slds-text-heading_small">
-                    <lightning-formatted-number
-                      value={ratingsReviewsResult.monthly}
-                      format-style="currency"
-                      currency-code="USD"
-                    ></lightning-formatted-number>
-                  </p>
-                </lightning-layout-item>
-                <lightning-layout-item size="4" padding="around-small">
-                  <p class="slds-text-title">Annual</p>
-                  <p class="slds-text-heading_small">
-                    <lightning-formatted-number
-                      value={ratingsReviewsResult.annual}
-                      format-style="currency"
-                      currency-code="USD"
-                    ></lightning-formatted-number>
-                  </p>
-                </lightning-layout-item>
-              </lightning-layout>
-            </div>
-          </template>
-
-          <h3
-            class="slds-text-heading_small slds-m-top_medium slds-m-bottom_x-small"
-          >
             Ignite Add-Ons
           </h3>
           <lightning-layout multiple-rows="true">
             <lightning-layout-item size="4" padding="around-small">
               <lightning-input
-                data-id="ignite-cx-toggle"
+                data-id="agent-track-toggle"
                 type="checkbox"
-                label={igniteCxToggleLabel}
-                checked={igniteCxEnabled}
-                disabled={igniteCxToggleDisabled}
-                onchange={handleIgniteCxToggle}
+                label="AgentTrack"
+                checked={agentTrackEnabled}
+                onchange={handleAgentTrackToggle}
+              ></lightning-input>
+            </lightning-layout-item>
+            <lightning-layout-item size="4" padding="around-small">
+              <lightning-input
+                data-id="rr-toggle"
+                type="checkbox"
+                label="Reputation Management"
+                checked={ratingsReviewsEnabled}
+                onchange={handleRatingsReviewsToggle}
               ></lightning-input>
             </lightning-layout-item>
             <lightning-layout-item size="4" padding="around-small">
               <lightning-input
                 data-id="ignite-ex-toggle"
                 type="checkbox"
-                label="Ignite EX (price TBD)"
+                label="Ignite EX"
                 checked={igniteExEnabled}
                 onchange={handleIgniteExToggle}
               ></lightning-input>
@@ -337,7 +239,7 @@
               <lightning-input
                 data-id="ignite-digital-toggle"
                 type="checkbox"
-                label="Ignite Digital ($40,000/year)"
+                label="Ignite Digital"
                 checked={igniteDigitalEnabled}
                 onchange={handleIgniteDigitalToggle}
               ></lightning-input>
@@ -346,7 +248,7 @@
               <lightning-input
                 data-id="case-management-toggle"
                 type="checkbox"
-                label="Case Management Build ($7,500 one-time)"
+                label="Case Premium ($7,500 one-time)"
                 checked={caseManagementEnabled}
                 onchange={handleCaseManagementToggle}
               ></lightning-input>
@@ -361,6 +263,164 @@
               ></lightning-input>
             </lightning-layout-item>
           </lightning-layout>
+
+          <template if:true={agentTrackEnabled}>
+            <div class="slds-box slds-theme_default slds-m-top_medium">
+              <h3 class="slds-text-heading_small slds-m-bottom_x-small">
+                AgentTrack (call center)
+              </h3>
+              <lightning-layout multiple-rows="true">
+                <lightning-layout-item size="6" padding="around-small">
+                  <p class="slds-text-title">Variant</p>
+                  <p class="slds-text-body_regular">Agent Experience</p>
+                </lightning-layout-item>
+                <lightning-layout-item size="6" padding="around-small">
+                  <lightning-combobox
+                    data-id="agent-count-band-combobox"
+                    label="Number of Agents"
+                    value={agentCountBand}
+                    options={agentCountBandOptions}
+                    onchange={handleAgentCountBandChange}
+                  ></lightning-combobox>
+                </lightning-layout-item>
+              </lightning-layout>
+              <p class="slds-m-top_x-small">
+                AgentTrack:
+                <lightning-formatted-number
+                  value={callCenterResult.perLocPerMonth}
+                  format-style="currency"
+                  currency-code="USD"
+                ></lightning-formatted-number>
+                / Loc / Mo (<lightning-formatted-number
+                  value={callCenterResult.annualTotal}
+                  format-style="currency"
+                  currency-code="USD"
+                ></lightning-formatted-number>
+                annual total)
+              </p>
+            </div>
+          </template>
+
+          <template if:true={ratingsReviewsEnabled}>
+            <div class="slds-box slds-theme_default slds-m-top_medium">
+              <h3 class="slds-text-heading_small slds-m-bottom_x-small">
+                Reputation Management
+              </h3>
+              <lightning-radio-group
+                data-id="rr-tier-radio-group"
+                label="Product Tier"
+                options={ratingsReviewsTierOptions}
+                value={ratingsReviewsTier}
+                onchange={handleRatingsReviewsTierChange}
+                class="slds-m-bottom_medium"
+              ></lightning-radio-group>
+
+              <lightning-checkbox-group
+                data-id="reputation-extras"
+                label="Additional Services"
+                options={reputationManagementExtraOptions}
+                value={reputationManagementExtras}
+                onchange={handleReputationManagementExtrasChange}
+                class="slds-m-bottom_medium"
+              ></lightning-checkbox-group>
+
+              <template if:true={ratingsReviewsResult}>
+                <div class="slds-box slds-theme_shade">
+                  <p>
+                    Bracket:
+                    <strong>{ratingsReviewsResult.bracket}</strong> locations
+                  </p>
+                  <lightning-layout multiple-rows="true">
+                    <lightning-layout-item size="4" padding="around-small">
+                      <p class="slds-text-title">Rate / Loc / Mo</p>
+                      <p class="slds-text-heading_small">
+                        <lightning-formatted-number
+                          value={ratingsReviewsResult.ratePerMonth}
+                          format-style="currency"
+                          currency-code="USD"
+                        ></lightning-formatted-number>
+                      </p>
+                    </lightning-layout-item>
+                    <lightning-layout-item size="4" padding="around-small">
+                      <p class="slds-text-title">Monthly</p>
+                      <p class="slds-text-heading_small">
+                        <lightning-formatted-number
+                          value={ratingsReviewsResult.monthly}
+                          format-style="currency"
+                          currency-code="USD"
+                        ></lightning-formatted-number>
+                      </p>
+                    </lightning-layout-item>
+                    <lightning-layout-item size="4" padding="around-small">
+                      <p class="slds-text-title">Annual</p>
+                      <p class="slds-text-heading_small">
+                        <lightning-formatted-number
+                          value={ratingsReviewsResult.annual}
+                          format-style="currency"
+                          currency-code="USD"
+                        ></lightning-formatted-number>
+                      </p>
+                    </lightning-layout-item>
+                  </lightning-layout>
+                </div>
+              </template>
+            </div>
+          </template>
+
+          <template if:true={igniteExEnabled}>
+            <div class="slds-box slds-theme_default slds-m-top_medium">
+              <h3 class="slds-text-heading_small slds-m-bottom_x-small">
+                Ignite EX
+              </h3>
+              <lightning-checkbox-group
+                data-id="ignite-ex-items"
+                label="Select all that apply"
+                options={igniteExItemOptions}
+                value={igniteExSelectedItems}
+                onchange={handleIgniteExItemsChange}
+                class="slds-m-bottom_medium"
+              ></lightning-checkbox-group>
+
+              <template if:true={igniteExPulseSelected}>
+                <lightning-input
+                  data-id="ignite-ex-pulse-quantity"
+                  type="number"
+                  label="Number of Pulses"
+                  value={igniteExPulseQuantity}
+                  min="0"
+                  step="1"
+                  onchange={handleIgniteExPulseQuantityChange}
+                  class="slds-m-bottom_medium"
+                ></lightning-input>
+              </template>
+
+              <template if:true={igniteExResult.isCustomPricing}>
+                <div
+                  class="slds-notify slds-notify_alert slds-theme_alert-texture slds-theme_warning slds-m-bottom_small"
+                  role="alert"
+                >
+                  {locations} locations is above the 10,000-location Ignite EX
+                  rate card ceiling — confirm pricing with the deal desk.
+                </div>
+              </template>
+
+              <p>
+                Ignite EX:
+                <lightning-formatted-number
+                  value={igniteExResult.annualTotal}
+                  format-style="currency"
+                  currency-code="USD"
+                ></lightning-formatted-number>
+                annual ·
+                <lightning-formatted-number
+                  value={igniteExResult.oneTimeTotal}
+                  format-style="currency"
+                  currency-code="USD"
+                ></lightning-formatted-number>
+                one-time
+              </p>
+            </div>
+          </template>
 
           <template if:true={igniteCommunitiesEnabled}>
             <div class="slds-box slds-theme_default slds-m-top_medium">
@@ -469,20 +529,50 @@
             </div>
           </template>
 
-          <template if:false={showQuotedPriceSummary}>
+          <template if:true={igniteDigitalEnabled}>
             <div class="slds-box slds-theme_default slds-m-top_medium">
               <h3 class="slds-text-heading_small slds-m-bottom_x-small">
-                Quoted Price
+                Ignite Digital
               </h3>
-              <p class="slds-text-body_small">
-                Base subscription excluded — this is a custom, add-ons-only
-                quote. Check "Include base subscription" or "Ignite CX" above
-                to price a Plan.
+              <lightning-checkbox-group
+                data-id="ignite-digital-extras"
+                label="Additional Services"
+                options={igniteDigitalExtraOptions}
+                value={igniteDigitalExtras}
+                onchange={handleIgniteDigitalExtrasChange}
+              ></lightning-checkbox-group>
+
+              <template if:true={mouseflowConfigSelected}>
+                <lightning-radio-group
+                  data-id="mouseflow-tier-radio-group"
+                  label="Mouseflow Config Tier"
+                  options={mouseflowTierOptions}
+                  value={mouseflowTier}
+                  onchange={handleMouseflowTierChange}
+                  class="slds-m-top_small"
+                ></lightning-radio-group>
+              </template>
+
+              <p class="slds-text-body_small slds-m-top_x-small">
+                Mouseflow Config is priced by its own tier — $45,000
+                Essential / $75,000 Advanced / $110,000 Elite — independent
+                of the quote's Service Tier. Contact Us (Inform) is a flat
+                $30,000/year.
               </p>
+              <template if:true={igniteDigitalExtrasResult.lines.length}>
+                <p class="slds-m-top_x-small">
+                  Ignite Digital extras:
+                  <lightning-formatted-number
+                    value={igniteDigitalExtrasResult.annualTotal}
+                    format-style="currency"
+                    currency-code="USD"
+                  ></lightning-formatted-number>
+                  / year
+                </p>
+              </template>
             </div>
           </template>
 
-          <template if:true={showQuotedPriceSummary}>
           <div class="slds-box slds-theme_default slds-m-top_medium">
             <h3 class="slds-text-heading_small slds-m-bottom_x-small">
               Quoted Price
@@ -498,10 +588,19 @@
                 desk before quoting.
               </div>
             </template>
+            <template if:true={baseQuote.isPriceTBD}>
+              <div
+                class="slds-notify slds-notify_alert slds-theme_alert-texture slds-theme_warning slds-m-bottom_small"
+                role="alert"
+              >
+                Elite has no rate card yet — the base package is priced at
+                $0 (TBD) until real rates are available.
+              </div>
+            </template>
             <template if:true={baseQuote.floorApplied}>
               <div class="slds-text-body_small slds-m-bottom_small">
                 Annual minimum applied — the calculated rate fell below the
-                plan's annual floor.
+                tier's annual floor.
               </div>
             </template>
 
@@ -594,7 +693,6 @@
               </lightning-layout>
             </template>
           </div>
-          </template>
         </lightning-tab>
 
         <!-- ============ DISCOVERY GUIDE ============ -->
@@ -608,12 +706,12 @@
             <li>Additional integrations (each way) — 4 standard included</li>
             <li>Languages — English &amp; Spanish included</li>
             <li>Additional surveys</li>
-            <li>Ratings & Reviews needed?</li>
+            <li>Reputation Management needed?</li>
             <li>Google-only, or more directories needed?</li>
             <li>Responses to reviews needed, or simply visibility to data?</li>
             <li>
-              Any managed services for Ratings needed (listings management,
-              white-glove responses)?
+              Any managed services for Reputation Management needed
+              (listings management, local pages, white-glove responses)?
             </li>
             <li>Do they have a customer community today?</li>
             <li>
@@ -624,64 +722,22 @@
           </ul>
 
           <h3 class="slds-text-heading_small slds-m-bottom_x-small">
-            Packages
+            Ignite Platform
           </h3>
           <p class="slds-text-body_small slds-m-bottom_small">
-            Selecting a package from the "Package" dropdown at the top of
-            this tool pre-fills the Plan, Ratings & Reviews tier, Ignite CX,
-            Ignite EX, Ignite Communities, and Ignite Digital below — that
-            Plan mapping is a first guess (there's no exact 1:1 match
-            between these 4 packages and the 5 rate-card plans) and should
-            be reviewed, not treated as final. Ignite Communities is priced
-            via its own tier/market/community-size calculator, and Ignite
-            Digital is a flat $40,000/year. Ignite CX only appears as its
-            own line item on a standalone quote — when a base subscription
-            is included, its cost is already folded into the base package
-            price. Ignite EX still has no pricing yet (shown as a $0
-            placeholder). Case management isn't wired into pricing
-            anywhere in this tool yet.
+            The base package on every quote — Service Tier (Foundational,
+            Advanced, or Elite) sets the price; Locations sets the base
+            rate-card band. Everything else (AgentTrack, Reputation
+            Management, Ignite EX, Ignite Communities, Ignite Digital, Case
+            Premium, Setup Fee) is an independent add-on checkbox, not tied
+            to a package bundle.
           </p>
-
           <div class="slds-box slds-m-bottom_small">
-            <h4 class="slds-text-heading_x-small">Ignite (Standard)</h4>
+            <h4 class="slds-text-heading_x-small">Included with every quote</h4>
             <ul class="slds-list_dotted">
-              <li>Location survey</li>
-              <li>
-                Google-only ratings (ingestion of data only, no responses)
-              </li>
-              <li>Case management</li>
-            </ul>
-          </div>
-
-          <div class="slds-box slds-m-bottom_small">
-            <h4 class="slds-text-heading_x-small">Ignite (Plus)</h4>
-            <p class="slds-text-body_small">Everything from Standard, plus:</p>
-            <ul class="slds-list_dotted">
-              <li>Response management for Ratings & Reviews</li>
-              <li>Ignite Digital</li>
-              <li>Ignite Community x1 (field intel OR customer)</li>
-            </ul>
-          </div>
-
-          <div class="slds-box slds-m-bottom_small">
-            <h4 class="slds-text-heading_x-small">Ignite (Enterprise)</h4>
-            <p class="slds-text-body_small">Everything from Plus, plus:</p>
-            <ul class="slds-list_dotted">
-              <li>Ignite EX</li>
-              <li>Up to 4 communities</li>
-              <li>Additional directories of Ratings & Reviews</li>
-            </ul>
-          </div>
-
-          <div class="slds-box slds-m-bottom_small">
-            <h4 class="slds-text-heading_x-small">Ignite (Managed)</h4>
-            <p class="slds-text-body_small">
-              Everything from Enterprise, plus:
-            </p>
-            <ul class="slds-list_dotted">
-              <li>Listings management</li>
-              <li>White glove responses</li>
-              <li>Additional directories of Ratings & Reviews</li>
+              <template for:each={ignitePlatformItems} for:item="item">
+                <li key={item}>{item}</li>
+              </template>
             </ul>
           </div>
 

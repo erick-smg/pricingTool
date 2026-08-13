@@ -1,34 +1,35 @@
 /**
  * Pure pricing calculations for the SMG New Logo Pricing Model (July 2026).
  * Location-band rate card transcribed from "REVISED Pricing Table - RG - 7-27-2026.xlsx" -
- * each plan has its own explicit $/location/month rate per band (not a flat multiplier off
- * the Pro/Advanced anchor). Everything else transcribed from "New Logo Pricing Analysis &
+ * each Service Tier has its own explicit $/location/month rate per band (not a flat
+ * multiplier off one anchor). Everything else transcribed from "New Logo Pricing Analysis &
  * Rate Card.xlsx" and "New Logo Pricing Strategy Memo.docx" (14 executed new-logo order
  * forms, 2018-2026).
  *
- * Replaces the prior "Developing a pricing tool - July 2026.xlsx" model: there is no more
- * Elite tier and no separate >1,250-location Enterprise branch - one continuous rate card
- * by location band covers every deal size, with a new Solution-Support-Only tier added.
+ * Service Tier (Foundational/Advanced/Elite) replaces the prior 5-value Plan: Foundational
+ * and Advanced reuse the former Standard/Foundational and Standard/Advanced rate columns
+ * (the Pro/Standard distinction and the separate Solution-Support-Only plan were dropped);
+ * Elite has no rate card yet and is quoted as a real $0 "price TBD" line, the same pattern
+ * used for Ignite EX.
  *
  * No LWC/Apex dependencies here by design - keep this file plain, importable,
  * and unit-testable in isolation.
  */
 
-export const PLANS = [
-  "Pro/Advanced",
-  "Standard/Advanced",
-  "Pro/Foundational",
-  "Standard/Foundational",
-  "Solution Support Only"
-];
+export const SERVICE_TIERS = ["Foundational", "Advanced", "Elite"];
 
-export const SOLUTION_SUPPORT_ONLY_PLAN = "Solution Support Only";
+// Elite has no rate card yet - computeBaseQuote short-circuits it to a $0/"price TBD" quote
+// (same pattern as Ignite EX) instead of doing a band lookup, so it's excluded from every band
+// below rather than carrying a placeholder rate that would look real.
+export const ELITE_SERVICE_TIER = "Elite";
 
-// REVISED Pricing Table (RG, 2026-07-27) - each plan now has its own explicit $/location/month
-// rate per band (no longer a flat multiplier off the Pro/Advanced anchor - the ratio between
-// plans isn't constant across bands). The 1-100 band is a flat annual fee per plan, not a
-// $/location/month rate, per that table's note ("Change 'up to 100 locations' to be a
-// flat-rate, not $/loc./month").
+// REVISED Pricing Table (RG, 2026-07-27), collapsed from 5 plans down to the 2 tiers that map
+// onto Foundational/Advanced (the former Standard/Foundational and Standard/Advanced columns -
+// the Pro/Standard distinction and the separate Solution-Support-Only plan were dropped when
+// Plan became the 3-value Service Tier). Each tier has its own explicit $/location/month rate
+// per band (not a flat multiplier off one anchor - the ratio between tiers isn't constant
+// across bands). The 1-100 band is a flat annual fee, not a $/location/month rate, per that
+// table's note ("Change 'up to 100 locations' to be a flat-rate, not $/loc./month").
 export const LOCATION_BANDS = [
   {
     min: 1,
@@ -36,11 +37,8 @@ export const LOCATION_BANDS = [
     label: "1 - 100",
     isFlatFee: true,
     flatAnnualFeeByPlan: {
-      "Pro/Advanced": 144000,
-      "Standard/Advanced": 120000,
-      "Pro/Foundational": 80000,
-      "Standard/Foundational": 60000,
-      "Solution Support Only": 44000
+      Advanced: 120000,
+      Foundational: 60000
     }
   },
   {
@@ -48,11 +46,8 @@ export const LOCATION_BANDS = [
     max: 150,
     label: "101 - 150",
     ratePerLocationPerMonthByPlan: {
-      "Pro/Advanced": 80,
-      "Standard/Advanced": 72,
-      "Pro/Foundational": 66.4,
-      "Standard/Foundational": 60,
-      "Solution Support Only": 44
+      Advanced: 72,
+      Foundational: 60
     }
   },
   {
@@ -60,11 +55,8 @@ export const LOCATION_BANDS = [
     max: 300,
     label: "151 - 300",
     ratePerLocationPerMonthByPlan: {
-      "Pro/Advanced": 58,
-      "Standard/Advanced": 52.2,
-      "Pro/Foundational": 48.14,
-      "Standard/Foundational": 43.5,
-      "Solution Support Only": 31.9
+      Advanced: 52.2,
+      Foundational: 43.5
     }
   },
   {
@@ -72,11 +64,8 @@ export const LOCATION_BANDS = [
     max: 600,
     label: "301 - 600",
     ratePerLocationPerMonthByPlan: {
-      "Pro/Advanced": 32.4375,
-      "Standard/Advanced": 25,
-      "Pro/Foundational": 25.95,
-      "Standard/Foundational": 20,
-      "Solution Support Only": 18.5
+      Advanced: 25,
+      Foundational: 20
     }
   },
   {
@@ -84,11 +73,8 @@ export const LOCATION_BANDS = [
     max: 1200,
     label: "601 - 1,200",
     ratePerLocationPerMonthByPlan: {
-      "Pro/Advanced": 30.166875,
-      "Standard/Advanced": 23.25,
-      "Pro/Foundational": 24.1335,
-      "Standard/Foundational": 18.6,
-      "Solution Support Only": 17.5
+      Advanced: 23.25,
+      Foundational: 18.6
     }
   },
   {
@@ -96,11 +82,8 @@ export const LOCATION_BANDS = [
     max: 2500,
     label: "1,201 - 2,500",
     ratePerLocationPerMonthByPlan: {
-      "Pro/Advanced": 27.1501875,
-      "Standard/Advanced": 20.925,
-      "Pro/Foundational": 21.72015,
-      "Standard/Foundational": 16.74,
-      "Solution Support Only": 14.85
+      Advanced: 20.925,
+      Foundational: 16.74
     }
   },
   {
@@ -108,11 +91,8 @@ export const LOCATION_BANDS = [
     max: 5000,
     label: "2,501 - 5,000",
     ratePerLocationPerMonthByPlan: {
-      "Pro/Advanced": 23.892165,
-      "Standard/Advanced": 18.414,
-      "Pro/Foundational": 19.113732,
-      "Standard/Foundational": 14.7312,
-      "Solution Support Only": 12.1
+      Advanced: 18.414,
+      Foundational: 14.7312
     }
   },
   {
@@ -121,26 +101,23 @@ export const LOCATION_BANDS = [
     label: "5,000+ (custom)",
     isCustom: true,
     ratePerLocationPerMonthByPlan: {
-      "Pro/Advanced": 20.5472619,
-      "Standard/Advanced": 15.83604,
-      "Pro/Foundational": 16.43780952,
-      "Standard/Foundational": 12.668832,
-      "Solution Support Only": 9.9
+      Advanced: 15.83604,
+      Foundational: 12.668832
     }
   }
 ];
 
-// Rate Card sheet, row 16 - annual minimum floors by service type. Advanced plans keep the
-// $80,000 full-service floor; Foundational plans get a lower $60,000 floor.
+// Rate Card sheet, row 16 - annual minimum floors by service tier.
 export const ANNUAL_MINIMUM_FLOOR = {
   advanced: 80000,
-  foundational: 60000,
-  supportOnly: 36000
+  foundational: 60000
 };
 
-// Rate Card sheet, row 17 - flat, not scaled by committed locations.
+// Rate Card sheet, row 17 - $5,000 base + $10/committed location, capped at $40,000.
 export const SETUP_FEE = {
-  flat: 10000
+  base: 5000,
+  perLocation: 10,
+  cap: 40000
 };
 
 // Rate Card sheet, row 18 - already the de facto standard in 9 of 12 subscription deals.
@@ -161,7 +138,10 @@ export const ADD_ON_RATES = {
   additionalSurveys: 12500,
   additionalSurveyRevisions: 1500,
   additionalIntegrations: 10000,
-  additionalBrands: 6000
+  additionalBrands: 6000,
+  additionalPerformance: 12000,
+  additionalAgile: 15000,
+  additionalConsultative: 35000
 };
 
 // Rate Card sheet, row 23 - Case management build, one-time.
@@ -173,8 +153,59 @@ export const CASE_MANAGEMENT_FEE = 7500;
 // quoted, Ignite CX's location cost is already folded into the base package price, so the
 // LWC skips adding a separate line item for it.
 
-// Ignite Digital has no per-location or per-market rate card yet - quoted as a flat annual fee.
-export const IGNITE_DIGITAL_FLAT_FEE = 40000;
+// Ignite Digital has no flat/base fee - it's priced purely through its two components below.
+// Mouseflow Config has its own independent 3-tier pricing (Essential/Advanced/Elite) - not
+// tied to the quote's Service Tier, since a customer's Mouseflow tier is picked separately.
+// Contact Us (Inform) is a flat annual fee. Both recurring.
+export const IGNITE_DIGITAL_MOUSEFLOW_TIERS = ["Essential", "Advanced", "Elite"];
+export const IGNITE_DIGITAL_MOUSEFLOW_FEE_BY_TIER = {
+  Essential: 45000,
+  Advanced: 75000,
+  Elite: 110000
+};
+export const IGNITE_DIGITAL_CONTACT_US_FEE = 30000;
+
+export const IGNITE_DIGITAL_EXTRA_KEYS = ["mouseflowConfig", "contactUs"];
+export const IGNITE_DIGITAL_EXTRA_LABELS = {
+  mouseflowConfig: "Mouseflow Config",
+  contactUs: "Contact Us (Inform)"
+};
+
+/**
+ * Prices whichever Ignite Digital extras the rep has selected. mouseflowTier is Mouseflow
+ * Config's own Essential/Advanced/Elite selection - independent of the quote's Service Tier.
+ */
+export function computeIgniteDigitalExtras(selectedExtras, mouseflowTier) {
+  const selected = new Set(selectedExtras || []);
+  const lines = [];
+
+  if (selected.has("mouseflowConfig")) {
+    lines.push({
+      key: "mouseflowConfig",
+      label: `${IGNITE_DIGITAL_EXTRA_LABELS.mouseflowConfig} (${mouseflowTier})`,
+      quantity: 1,
+      unitPrice: IGNITE_DIGITAL_MOUSEFLOW_FEE_BY_TIER[mouseflowTier] || 0
+    });
+  }
+  if (selected.has("contactUs")) {
+    lines.push({
+      key: "contactUs",
+      label: IGNITE_DIGITAL_EXTRA_LABELS.contactUs,
+      quantity: 1,
+      unitPrice: IGNITE_DIGITAL_CONTACT_US_FEE
+    });
+  }
+
+  const withTotals = lines.map((line) => ({
+    ...line,
+    annualTotal: line.quantity * line.unitPrice
+  }));
+  const annualTotal = round2(
+    withTotals.reduce((sum, line) => sum + line.annualTotal, 0)
+  );
+
+  return { lines: withTotals, annualTotal };
+}
 
 // Call Center WM - AgentTrack call-center add-on.
 export const CALL_CENTER = {
@@ -203,6 +234,15 @@ export const CALL_CENTER = {
 };
 
 export const AGENT_TRACK_VARIANTS = ["web", "ivr", "webIvr"];
+
+// Number of Agents is a 3-band picklist in the UI rather than a free count - each band prices
+// off a representative agent count run through the (unchanged) agentPriceTiers table above,
+// rather than the exact count the rep would otherwise have entered.
+export const AGENT_COUNT_BANDS = [
+  { key: "0-60", label: "0-60 agents", representativeCount: 30 },
+  { key: "60-100", label: "60-100 agents", representativeCount: 80 },
+  { key: "100-200", label: "100-200 agents", representativeCount: 150 }
+];
 
 // Ratings & Reviews sheet, rows 7-12: $/location/month by location-count bracket.
 export const RATINGS_REVIEWS_TIERS = [
@@ -466,27 +506,43 @@ function getTermPremium(termMonths) {
   return term ? term.ratePremium : 0;
 }
 
-function getAnnualFloor(plan) {
-  if (plan === SOLUTION_SUPPORT_ONLY_PLAN) {
-    return ANNUAL_MINIMUM_FLOOR.supportOnly;
-  }
-  return plan.includes("Foundational")
+function getAnnualFloor(tier) {
+  return tier === "Foundational"
     ? ANNUAL_MINIMUM_FLOOR.foundational
     : ANNUAL_MINIMUM_FLOOR.advanced;
 }
 
 /**
- * Computes the base package quote for a given plan, location count, and term length.
+ * Computes the base package quote for a given Service Tier, location count, and term length.
  * One continuous rate card covers every deal size (REVISED Pricing Table) - locations
  * above 5,000 use the top ("custom") band rate but are flagged via isCustomPricing so the
  * UI can prompt for deal-desk review rather than silently auto-quoting. Locations 1-100 use
  * that band's flat annual fee instead of a $/location/month rate.
+ *
+ * Elite has no rate card yet - it's quoted the same way Ignite EX is, as a real $0 line
+ * flagged "price TBD" via isPriceTBD, rather than a band lookup.
  */
-export function computeBaseQuote(plan, locations, termMonths) {
-  if (!PLANS.includes(plan)) {
-    throw new Error(`Unknown plan: ${plan}`);
+export function computeBaseQuote(tier, locations, termMonths) {
+  if (!SERVICE_TIERS.includes(tier)) {
+    throw new Error(`Unknown service tier: ${tier}`);
   }
   const safeLocations = Math.max(1, Number(locations) || 1);
+
+  if (tier === ELITE_SERVICE_TIER) {
+    return {
+      tier,
+      locations: safeLocations,
+      bandLabel: null,
+      isCustomPricing: false,
+      isPriceTBD: true,
+      listRatePerLocationPerMonth: 0,
+      pricePerLocationPerMonth: 0,
+      totalMonthly: 0,
+      totalAnnual: 0,
+      floorApplied: false
+    };
+  }
+
   const band = findLocationBand(safeLocations);
   const termPremium = getTermPremium(termMonths);
 
@@ -495,23 +551,24 @@ export function computeBaseQuote(plan, locations, termMonths) {
   if (band.isFlatFee) {
     // 1-100 locations is a flat annual fee regardless of the actual count - not a
     // $/location/month rate - so the "per location" figure is only ever a derived average.
-    rawAnnual = round2(band.flatAnnualFeeByPlan[plan] * (1 + termPremium));
+    rawAnnual = round2(band.flatAnnualFeeByPlan[tier] * (1 + termPremium));
     listRatePerLocationPerMonth = round2(rawAnnual / safeLocations / 12);
   } else {
     listRatePerLocationPerMonth = round2(
-      band.ratePerLocationPerMonthByPlan[plan] * (1 + termPremium)
+      band.ratePerLocationPerMonthByPlan[tier] * (1 + termPremium)
     );
     rawAnnual = round2(listRatePerLocationPerMonth * safeLocations * 12);
   }
-  const annualFloor = getAnnualFloor(plan);
+  const annualFloor = getAnnualFloor(tier);
   const totalAnnual = Math.max(rawAnnual, annualFloor);
   const pricePerLocationPerMonth = round2(totalAnnual / safeLocations / 12);
 
   return {
-    plan,
+    tier,
     locations: safeLocations,
     bandLabel: band.label,
     isCustomPricing: Boolean(band.isCustom),
+    isPriceTBD: false,
     listRatePerLocationPerMonth,
     pricePerLocationPerMonth,
     totalMonthly: round2(totalAnnual / 12),
@@ -550,7 +607,8 @@ export function computeThreeYearProjection(year1Annual) {
 
 /**
  * Add-ons over the base package (Quoting Tool D26:G48): languages, surveys, revisions,
- * integrations, and brands. Each is a flat annual $ divided across locations/12 -> $/loc/mo.
+ * integrations, brands, and additional Performance/Agile/Consultative units. Each is a flat
+ * annual $ divided across locations/12 -> $/loc/mo.
  */
 export function computeAddOns(quantities, locations) {
   const safeLocations = Math.max(1, Number(locations) || 1);
@@ -560,6 +618,9 @@ export function computeAddOns(quantities, locations) {
     additionalSurveyRevisions: 0,
     additionalIntegrations: 0,
     additionalBrands: 0,
+    additionalPerformance: 0,
+    additionalAgile: 0,
+    additionalConsultative: 0,
     ...quantities
   };
 
@@ -606,6 +667,24 @@ export function computeAddOns(quantities, locations) {
       label: "Add'l Brands",
       quantity: qty.additionalBrands,
       annualTotal: qty.additionalBrands * ADD_ON_RATES.additionalBrands
+    },
+    {
+      key: "additionalPerformance",
+      label: "Add'l Performance",
+      quantity: qty.additionalPerformance,
+      annualTotal: qty.additionalPerformance * ADD_ON_RATES.additionalPerformance
+    },
+    {
+      key: "additionalAgile",
+      label: "Add'l Agile",
+      quantity: qty.additionalAgile,
+      annualTotal: qty.additionalAgile * ADD_ON_RATES.additionalAgile
+    },
+    {
+      key: "additionalConsultative",
+      label: "Add'l Consultative",
+      quantity: qty.additionalConsultative,
+      annualTotal: qty.additionalConsultative * ADD_ON_RATES.additionalConsultative
     }
   ].map((line) => ({
     ...line,
@@ -701,4 +780,246 @@ export function computeRatingsReviews(tierKey, locations) {
   const monthly = round2(ratePerMonth * safeLocations);
   const annual = round2(monthly * 12);
   return { tierKey, bracket: bracket.label, ratePerMonth, monthly, annual };
+}
+
+// Ignite EX rate card, transcribed from the "Ignite EX pricing" sheet (2025, SMG confidential).
+// The two location-banded columns are the "Long Form Annual Survey" engagement tiers; every
+// other item is a flat, location-independent professional-services fee. 10,000+ locations has
+// no published rate ("Custom, see Tara") - flagged via isCustom the same way the base package's
+// 5,000+ band is.
+export const IGNITE_EX_LOCATION_BANDS = [
+  { min: 200, max: 300, label: "200 - 300", engagementOneConsultative: 75000, engagementTwoConsultative: 120000 },
+  { min: 301, max: 400, label: "301 - 400", engagementOneConsultative: 95000, engagementTwoConsultative: 140000 },
+  { min: 401, max: 500, label: "401 - 500", engagementOneConsultative: 110000, engagementTwoConsultative: 155000 },
+  { min: 501, max: 1000, label: "501 - 1,000", engagementOneConsultative: 135000, engagementTwoConsultative: 180000 },
+  { min: 1001, max: 1500, label: "1,001 - 1,500", engagementOneConsultative: 145000, engagementTwoConsultative: 190000 },
+  { min: 1501, max: 2000, label: "1,501 - 2,000", engagementOneConsultative: 160000, engagementTwoConsultative: 205000 },
+  { min: 2001, max: 2500, label: "2,001 - 2,500", engagementOneConsultative: 180000, engagementTwoConsultative: 225000 },
+  { min: 2501, max: 3000, label: "2,501 - 3,000", engagementOneConsultative: 200000, engagementTwoConsultative: 245000 },
+  { min: 3001, max: 4000, label: "3,001 - 4,000", engagementOneConsultative: 225000, engagementTwoConsultative: 270000 },
+  { min: 4001, max: 5000, label: "4,001 - 5,000", engagementOneConsultative: 240000, engagementTwoConsultative: 285000 },
+  { min: 5001, max: 7500, label: "5,001 - 7,500", engagementOneConsultative: 260000, engagementTwoConsultative: 305000 },
+  { min: 7501, max: 10000, label: "7,500 - 10,000", engagementOneConsultative: 275000, engagementTwoConsultative: 320000 },
+  {
+    min: 10001,
+    max: Infinity,
+    label: "10,000+ (custom)",
+    isCustom: true,
+    engagementOneConsultative: null,
+    engagementTwoConsultative: null
+  }
+];
+
+// Flat (non-banded) Ignite EX items. pulseAgileAnalysisFee is inferred as half of
+// agileAnalysesPairFee ("2 Agile Analyses" = $10,000) - the sheet gives Pulse's cost as
+// "$20,000 + agile analysis" without stating that fee on its own; confirm before relying on it.
+export const IGNITE_EX_FLAT_ITEMS = {
+  pulseBaseFee: 20000,
+  pulseAgileAnalysisFee: 5000,
+  onboardSetupFee: 10000,
+  onboardAnnualFee: 5000,
+  staggeredOnboardFee: 40000,
+  exitSetupFee: 10000,
+  exitAnnualFee: 5000,
+  alwaysOnSetupFee: 10000,
+  alwaysOnAnnualFee: 5000,
+  agileAnalysesPairFee: 10000,
+  performanceInsightFee: 8000,
+  consultativeFee: 28000
+};
+
+export const IGNITE_EX_ITEM_KEYS = [
+  "engagementOneConsultative",
+  "engagementTwoConsultative",
+  "pulse",
+  "onboard",
+  "staggeredOnboard",
+  "exit",
+  "alwaysOn",
+  "agileAnalysesPair",
+  "performanceInsight",
+  "consultative"
+];
+
+export const IGNITE_EX_ITEM_LABELS = {
+  engagementOneConsultative: "Long Form Annual Survey (1 Engagement + 1 Consultative)",
+  engagementTwoConsultative: "Long Form Annual Survey (2 Engagement + 2 Consultative)",
+  pulse: "Pulse",
+  onboard: "Onboard",
+  staggeredOnboard: "Staggered Onboard (4 points)",
+  exit: "Exit",
+  alwaysOn: "Always-On",
+  agileAnalysesPair: "2 Agile Analyses",
+  performanceInsight: "Performance Insight",
+  consultative: "Consultative"
+};
+
+function findIgniteExLocationBand(locations) {
+  const safeLocations = Math.max(1, Number(locations) || 1);
+  return (
+    IGNITE_EX_LOCATION_BANDS.find(
+      (band) => safeLocations >= band.min && safeLocations <= band.max
+    ) || IGNITE_EX_LOCATION_BANDS[IGNITE_EX_LOCATION_BANDS.length - 1]
+  );
+}
+
+/**
+ * Prices every Ignite EX item the rep has selected. Location-banded items (the Long Form
+ * Annual Survey engagement tiers) are recurring/annual; everything else is a one-time
+ * professional-services fee, except Onboard/Exit/Always-On which each split into a one-time
+ * setup line and a recurring annual line, per the source rate card.
+ */
+export function computeIgniteEx({ selectedItems, locations, pulseQuantity }) {
+  const selected = new Set(selectedItems || []);
+  const band = findIgniteExLocationBand(locations);
+  const pulses = Math.max(0, Number(pulseQuantity) || 0);
+  const lines = [];
+
+  if (selected.has("engagementOneConsultative")) {
+    lines.push({
+      key: "engagementOneConsultative",
+      label: IGNITE_EX_ITEM_LABELS.engagementOneConsultative,
+      quantity: 1,
+      unitPrice: band.engagementOneConsultative || 0,
+      isOneTime: false,
+      isCustomPricing: Boolean(band.isCustom)
+    });
+  }
+  if (selected.has("engagementTwoConsultative")) {
+    lines.push({
+      key: "engagementTwoConsultative",
+      label: IGNITE_EX_ITEM_LABELS.engagementTwoConsultative,
+      quantity: 1,
+      unitPrice: band.engagementTwoConsultative || 0,
+      isOneTime: false,
+      isCustomPricing: Boolean(band.isCustom)
+    });
+  }
+  if (selected.has("pulse") && pulses > 0) {
+    lines.push({
+      key: "pulse",
+      label: IGNITE_EX_ITEM_LABELS.pulse,
+      quantity: pulses,
+      unitPrice:
+        IGNITE_EX_FLAT_ITEMS.pulseBaseFee +
+        IGNITE_EX_FLAT_ITEMS.pulseAgileAnalysisFee,
+      isOneTime: true,
+      isCustomPricing: false
+    });
+  }
+  if (selected.has("onboard")) {
+    lines.push(
+      {
+        key: "onboardSetup",
+        label: `${IGNITE_EX_ITEM_LABELS.onboard} — Setup Fee`,
+        quantity: 1,
+        unitPrice: IGNITE_EX_FLAT_ITEMS.onboardSetupFee,
+        isOneTime: true,
+        isCustomPricing: false
+      },
+      {
+        key: "onboardAnnual",
+        label: `${IGNITE_EX_ITEM_LABELS.onboard} — Annual Fee`,
+        quantity: 1,
+        unitPrice: IGNITE_EX_FLAT_ITEMS.onboardAnnualFee,
+        isOneTime: false,
+        isCustomPricing: false
+      }
+    );
+  }
+  if (selected.has("staggeredOnboard")) {
+    lines.push({
+      key: "staggeredOnboard",
+      label: IGNITE_EX_ITEM_LABELS.staggeredOnboard,
+      quantity: 1,
+      unitPrice: IGNITE_EX_FLAT_ITEMS.staggeredOnboardFee,
+      isOneTime: true,
+      isCustomPricing: false
+    });
+  }
+  if (selected.has("exit")) {
+    lines.push(
+      {
+        key: "exitSetup",
+        label: `${IGNITE_EX_ITEM_LABELS.exit} — Setup Fee`,
+        quantity: 1,
+        unitPrice: IGNITE_EX_FLAT_ITEMS.exitSetupFee,
+        isOneTime: true,
+        isCustomPricing: false
+      },
+      {
+        key: "exitAnnual",
+        label: `${IGNITE_EX_ITEM_LABELS.exit} — Annual Fee`,
+        quantity: 1,
+        unitPrice: IGNITE_EX_FLAT_ITEMS.exitAnnualFee,
+        isOneTime: false,
+        isCustomPricing: false
+      }
+    );
+  }
+  if (selected.has("alwaysOn")) {
+    lines.push(
+      {
+        key: "alwaysOnSetup",
+        label: `${IGNITE_EX_ITEM_LABELS.alwaysOn} — Setup Fee`,
+        quantity: 1,
+        unitPrice: IGNITE_EX_FLAT_ITEMS.alwaysOnSetupFee,
+        isOneTime: true,
+        isCustomPricing: false
+      },
+      {
+        key: "alwaysOnAnnual",
+        label: `${IGNITE_EX_ITEM_LABELS.alwaysOn} — Annual Fee`,
+        quantity: 1,
+        unitPrice: IGNITE_EX_FLAT_ITEMS.alwaysOnAnnualFee,
+        isOneTime: false,
+        isCustomPricing: false
+      }
+    );
+  }
+  if (selected.has("agileAnalysesPair")) {
+    lines.push({
+      key: "agileAnalysesPair",
+      label: IGNITE_EX_ITEM_LABELS.agileAnalysesPair,
+      quantity: 1,
+      unitPrice: IGNITE_EX_FLAT_ITEMS.agileAnalysesPairFee,
+      isOneTime: true,
+      isCustomPricing: false
+    });
+  }
+  if (selected.has("performanceInsight")) {
+    lines.push({
+      key: "performanceInsight",
+      label: IGNITE_EX_ITEM_LABELS.performanceInsight,
+      quantity: 1,
+      unitPrice: IGNITE_EX_FLAT_ITEMS.performanceInsightFee,
+      isOneTime: true,
+      isCustomPricing: false
+    });
+  }
+  if (selected.has("consultative")) {
+    lines.push({
+      key: "consultative",
+      label: IGNITE_EX_ITEM_LABELS.consultative,
+      quantity: 1,
+      unitPrice: IGNITE_EX_FLAT_ITEMS.consultativeFee,
+      isOneTime: true,
+      isCustomPricing: false
+    });
+  }
+
+  const withTotals = lines.map((line) => ({
+    ...line,
+    annualTotal: line.quantity * line.unitPrice
+  }));
+
+  const annualTotal = round2(
+    withTotals.filter((l) => !l.isOneTime).reduce((sum, l) => sum + l.annualTotal, 0)
+  );
+  const oneTimeTotal = round2(
+    withTotals.filter((l) => l.isOneTime).reduce((sum, l) => sum + l.annualTotal, 0)
+  );
+  const isCustomPricing = withTotals.some((l) => l.isCustomPricing);
+
+  return { lines: withTotals, annualTotal, oneTimeTotal, isCustomPricing };
 }

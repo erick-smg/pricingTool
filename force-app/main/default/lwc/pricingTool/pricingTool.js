@@ -9,15 +9,20 @@ import NUMBER_OF_LOCATIONS_FIELD from "@salesforce/schema/Opportunity.Number_of_
 import syncLineItems from "@salesforce/apex/PricingToolController.syncLineItems";
 import getExistingLineItems from "@salesforce/apex/PricingToolController.getExistingLineItems";
 import {
-  PLANS,
+  SERVICE_TIERS,
   TERM_OPTIONS,
+  AGENT_COUNT_BANDS,
   RATINGS_REVIEWS_TIER_KEYS,
   RATINGS_REVIEWS_TIER_LABELS,
   MANAGED_LISTING_MANAGEMENT_REFERENCE,
-  IGNITE_DIGITAL_FLAT_FEE,
   CASE_MANAGEMENT_FEE,
   COMMUNITY_TIERS,
   COMMUNITY_TIER_SPECS,
+  IGNITE_EX_ITEM_KEYS,
+  IGNITE_EX_ITEM_LABELS,
+  IGNITE_DIGITAL_EXTRA_KEYS,
+  IGNITE_DIGITAL_EXTRA_LABELS,
+  IGNITE_DIGITAL_MOUSEFLOW_TIERS,
   computeBaseQuote,
   computeSetupFee,
   computeThreeYearProjection,
@@ -25,24 +30,37 @@ import {
   computeCallCenter,
   computeRatingsReviews,
   computeCommunityQuote,
+  computeIgniteEx,
+  computeIgniteDigitalExtras,
   getDiscountGuidance
 } from "c/pricingEngine";
 
+// "none" is never exposed in the UI (AgentTrack is a plain checkbox now) but is kept as the
+// internal off-value so computeCallCenter's existing variant contract doesn't need to change.
 const AGENT_TRACK_LABELS = {
   none: "None",
-  web: "Web Only"
+  web: "Agent Experience"
 };
 
 function round2(value) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+// Foundational/Advanced reuse the product codes from the former Standard/Foundational and
+// Standard/Advanced plans so previously-synced Opportunities on those codes still round-trip.
 const BASE_PACKAGE_PRODUCT_CODES = {
-  "Pro/Advanced": "BASE-PRO-ADV",
-  "Standard/Advanced": "BASE-STD-ADV",
-  "Pro/Foundational": "BASE-PRO-FOUND",
-  "Standard/Foundational": "BASE-STD-FOUND",
-  "Solution Support Only": "SOLUTION-SUPPORT"
+  Foundational: "BASE-STD-FOUND",
+  Advanced: "BASE-STD-ADV",
+  Elite: "BASE-ELITE"
+};
+
+// Legacy-only: the dropped Pro/Standard distinction on old synced Opportunities. Never written
+// going forward - read-side only, so those records still rehydrate to a sensible tier.
+// "Solution Support Only" (SOLUTION-SUPPORT) has no equivalent tier and is left unmapped; it
+// simply won't be recognized on read, same graceful-degradation as any other unmapped code.
+const LEGACY_BASE_PACKAGE_TIER_BY_PRODUCT_CODE = {
+  "BASE-PRO-ADV": "Advanced",
+  "BASE-PRO-FOUND": "Foundational"
 };
 
 const ADD_ON_PRODUCT_CODES = {
@@ -51,7 +69,10 @@ const ADD_ON_PRODUCT_CODES = {
   additionalSurveys: "ADDON-SURVEY",
   additionalSurveyRevisions: "ADDON-SURVEY-REV",
   additionalIntegrations: "ADDON-INTEGRATION",
-  additionalBrands: "ADDON-BRAND"
+  additionalBrands: "ADDON-BRAND",
+  additionalPerformance: "ADDON-PERFORMANCE",
+  additionalAgile: "ADDON-AGILE",
+  additionalConsultative: "ADDON-CONSULTATIVE"
 };
 
 const AGENT_TRACK_PRODUCT_CODES = {
@@ -66,9 +87,61 @@ const RATINGS_REVIEWS_PRODUCT_CODES = {
   basic: "RR-BASIC"
 };
 
-// Product code unchanged in Salesforce - only the display name changed to "Ignite CX".
-const IGNITE_CX_PRODUCT_CODE = "ENT-LOC-SURVEY";
-const IGNITE_EX_PRODUCT_CODE = "IGNITE-EX";
+// Every Ignite EX line computeIgniteEx can produce, keyed by its `line.key`.
+const IGNITE_EX_PRODUCT_CODES = {
+  engagementOneConsultative: "EX-ENG1CONSULT",
+  engagementTwoConsultative: "EX-ENG2CONSULT",
+  pulse: "EX-PULSE",
+  onboardSetup: "EX-ONBOARD-SETUP",
+  onboardAnnual: "EX-ONBOARD-ANNUAL",
+  staggeredOnboard: "EX-ONBOARD-STAGGERED",
+  exitSetup: "EX-EXIT-SETUP",
+  exitAnnual: "EX-EXIT-ANNUAL",
+  alwaysOnSetup: "EX-ALWAYSON-SETUP",
+  alwaysOnAnnual: "EX-ALWAYSON-ANNUAL",
+  agileAnalysesPair: "EX-AGILE-PAIR",
+  performanceInsight: "EX-PERF-INSIGHT",
+  consultative: "EX-CONSULTATIVE"
+};
+
+// Onboard/Exit/Always-On each produce two lines (setup + annual) for one checkbox-group item -
+// maps a synced line's key back to the item key the checkbox-group actually stores.
+const IGNITE_EX_ITEM_KEY_BY_LINE_KEY = {
+  engagementOneConsultative: "engagementOneConsultative",
+  engagementTwoConsultative: "engagementTwoConsultative",
+  pulse: "pulse",
+  onboardSetup: "onboard",
+  onboardAnnual: "onboard",
+  staggeredOnboard: "staggeredOnboard",
+  exitSetup: "exit",
+  exitAnnual: "exit",
+  alwaysOnSetup: "alwaysOn",
+  alwaysOnAnnual: "alwaysOn",
+  agileAnalysesPair: "agileAnalysesPair",
+  performanceInsight: "performanceInsight",
+  consultative: "consultative"
+};
+
+// Reputation Management / Ignite Digital / Add'l Surveys sub-selections have no pricing of
+// their own - they're recorded as a plain "; includes X, Y" suffix on the parent line's
+// description rather than as separate line items.
+const REPUTATION_EXTRA_LABELS = {
+  listingsManagement: "Listings Management",
+  localPages: "Local pages"
+};
+const ADDITIONAL_SURVEY_TYPE_LABELS = {
+  postship: "Postship",
+  closeTheLoop: "Close the Loop",
+  callCenterAgentTrack: "Call Center (AgentTrack)"
+};
+
+// Ignite Digital's extras ARE priced (unlike Reputation Management's/Add'l Surveys') - each
+// selected extra becomes its own line item, same pattern as Ignite EX.
+const IGNITE_DIGITAL_EXTRA_PRODUCT_CODES = {
+  mouseflowConfig: "IGNITE-DIGITAL-MOUSEFLOW",
+  contactUs: "IGNITE-DIGITAL-CONTACTUS"
+};
+
 const IGNITE_COMMUNITIES_PRODUCT_CODE = "IGNITE-COMMUNITIES";
 const IGNITE_DIGITAL_PRODUCT_CODE = "IGNITE-DIGITAL";
 const CASE_MANAGEMENT_PRODUCT_CODE = "CASE-MANAGEMENT";
@@ -76,24 +149,29 @@ const SETUP_FEE_PRODUCT_CODE = "SETUP";
 const NEW_LOGO_OPPORTUNITY_TYPE = "New Logo";
 const MAX_DISCOUNT_PERCENT = 10;
 
-// Appended to the base package line's description when Ignite CX is folded into it (no
-// separate Ignite CX line item exists to carry that information otherwise).
-const IGNITE_CX_INCLUDED_SUFFIX = " (includes Ignite CX)";
-
 function reverseMap(map) {
   return Object.fromEntries(
     Object.entries(map).map(([key, value]) => [value, key])
   );
 }
 
-const REVERSE_BASE_PACKAGE_PRODUCT_CODES = reverseMap(
-  BASE_PACKAGE_PRODUCT_CODES
-);
+const REVERSE_BASE_PACKAGE_PRODUCT_CODES = {
+  ...reverseMap(BASE_PACKAGE_PRODUCT_CODES),
+  ...LEGACY_BASE_PACKAGE_TIER_BY_PRODUCT_CODE
+};
 const REVERSE_AGENT_TRACK_PRODUCT_CODES = reverseMap(
   AGENT_TRACK_PRODUCT_CODES
 );
 const REVERSE_RATINGS_REVIEWS_PRODUCT_CODES = reverseMap(
   RATINGS_REVIEWS_PRODUCT_CODES
+);
+const REVERSE_IGNITE_EX_PRODUCT_CODES = reverseMap(IGNITE_EX_PRODUCT_CODES);
+const REVERSE_REPUTATION_EXTRA_LABELS = reverseMap(REPUTATION_EXTRA_LABELS);
+const REVERSE_IGNITE_DIGITAL_EXTRA_PRODUCT_CODES = reverseMap(
+  IGNITE_DIGITAL_EXTRA_PRODUCT_CODES
+);
+const REVERSE_ADDITIONAL_SURVEY_TYPE_LABELS = reverseMap(
+  ADDITIONAL_SURVEY_TYPE_LABELS
 );
 
 // Term_Length__c is a picklist whose values are these exact labels, not the raw month count.
@@ -109,7 +187,10 @@ const ADD_ON_STATE_FIELD_BY_PRODUCT_CODE = {
   "ADDON-SURVEY": "additionalSurveys",
   "ADDON-SURVEY-REV": "additionalSurveyRevisions",
   "ADDON-INTEGRATION": "additionalIntegrations",
-  "ADDON-BRAND": "additionalBrands"
+  "ADDON-BRAND": "additionalBrands",
+  "ADDON-PERFORMANCE": "additionalPerformance",
+  "ADDON-AGILE": "additionalAgile",
+  "ADDON-CONSULTATIVE": "additionalConsultative"
 };
 
 function parseLocationsFromDescription(description) {
@@ -117,9 +198,37 @@ function parseLocationsFromDescription(description) {
   return match ? Number(match[1].replace(/,/g, "")) : null;
 }
 
-function parseAgentCountFromDescription(description) {
-  const match = /—\s*(\d+)\s+agents/.exec(description || "");
-  return match ? Number(match[1]) : 0;
+function parseAgentBandFromDescription(description) {
+  const match = /—\s*([\d]+-[\d]+)\s+agents/.exec(description || "");
+  return match ? match[1] : "0-60";
+}
+
+function parseMouseflowTierFromDescription(description) {
+  const match = /Mouseflow Config \((\w+)\)/.exec(description || "");
+  return match && IGNITE_DIGITAL_MOUSEFLOW_TIERS.includes(match[1])
+    ? match[1]
+    : "Essential";
+}
+
+function parseIncludedExtrasFromDescription(description, keyByLabel) {
+  const match = /; includes (.+)$/.exec(description || "");
+  if (!match) {
+    return [];
+  }
+  return match[1]
+    .split(",")
+    .map((label) => label.trim())
+    .map((label) => keyByLabel[label])
+    .filter(Boolean);
+}
+
+function appendIncludedExtras(description, selectedKeys, labelsByKey) {
+  const labels = (selectedKeys || [])
+    .map((key) => labelsByKey[key])
+    .filter(Boolean);
+  return labels.length > 0
+    ? `${description}; includes ${labels.join(", ")}`
+    : description;
 }
 
 const COMMUNITY_TIER_BY_LABEL = Object.fromEntries(
@@ -145,79 +254,50 @@ function parseCommunityConfigurationFromDescription(description) {
   };
 }
 
-// Packages (Discovery Guide tab) are the company's go-forward sales motion.
-// Plan defaults below are a first-guess mapping onto the new 5-plan rate card (there's no
-// exact 1:1 correspondence - 4 packages vs. 5 plans) and are meant to be adjusted by the
-// rep afterward, not treated as authoritative. Ratings & Reviews tier is an exact mapping.
-const PACKAGE_LABELS = {
-  igniteStandard: "Ignite (Standard)",
-  ignitePlus: "Ignite (Plus)",
-  igniteEnterprise: "Ignite (Enterprise)",
-  igniteManaged: "Ignite (Managed)"
-};
-
-const PACKAGE_DEFAULTS = {
-  igniteStandard: {
-    selectedPlan: "Standard/Foundational",
-    ratingsReviewsTier: "basic",
-    igniteCxEnabled: true,
-    igniteExEnabled: false,
-    igniteCommunitiesEnabled: false,
-    igniteDigitalEnabled: false
-  },
-  ignitePlus: {
-    selectedPlan: "Standard/Advanced",
-    ratingsReviewsTier: "pro",
-    igniteCxEnabled: true,
-    igniteExEnabled: false,
-    igniteCommunitiesEnabled: true,
-    igniteDigitalEnabled: true
-  },
-  igniteEnterprise: {
-    selectedPlan: "Pro/Foundational",
-    ratingsReviewsTier: "premium",
-    igniteCxEnabled: true,
-    igniteExEnabled: true,
-    igniteCommunitiesEnabled: true,
-    igniteDigitalEnabled: true
-  },
-  igniteManaged: {
-    selectedPlan: "Pro/Advanced",
-    ratingsReviewsTier: "premium",
-    igniteCxEnabled: true,
-    igniteExEnabled: true,
-    igniteCommunitiesEnabled: true,
-    igniteDigitalEnabled: true
-  }
-};
-
 export default class PricingTool extends LightningElement {
   @api recordId;
 
   locations = 0;
-  selectedPlan = "Pro/Advanced";
-  selectedPackage = "";
+  serviceTier = "Foundational";
   termMonths = "36";
-  includeBaseSubscription = false;
+
+  // Ignite Platform is now the fixed, always-included base package - purely a reference list,
+  // never selected/deselected by the rep.
+  ignitePlatformItems = [
+    "Performance Dashboard",
+    "Location Survey",
+    "Case Management",
+    "Knowledge Agent"
+  ];
 
   additionalLanguages = 0;
   additionalSurveys = 0;
   additionalSurveyRevisions = 0;
   additionalIntegrations = 0;
   additionalBrands = 0;
+  additionalPerformance = 0;
+  additionalAgile = 0;
+  additionalConsultative = 0;
+  additionalSurveyTypes = [];
 
+  agentTrackEnabled = false;
   agentTrackVariant = "none";
-  agentCount = 0;
+  agentCountBand = "0-60";
 
   ratingsReviewsEnabled = false;
   ratingsReviewsTier = "pro";
+  reputationManagementExtras = [];
 
   discountPercent = 0;
 
-  igniteCxEnabled = false;
   igniteExEnabled = false;
+  igniteExSelectedItems = [];
+  igniteExPulseQuantity = 0;
+
   igniteCommunitiesEnabled = false;
   igniteDigitalEnabled = false;
+  igniteDigitalExtras = [];
+  mouseflowTier = "Essential";
   caseManagementEnabled = false;
   setupFeeEnabled = false;
   setupFeeDefaultApplied = false;
@@ -295,18 +375,8 @@ export default class PricingTool extends LightningElement {
     }
   }
 
-  get planOptions() {
-    return PLANS.map((plan) => ({ label: plan, value: plan }));
-  }
-
-  get packageOptions() {
-    return [
-      { label: "Custom (no package)", value: "" },
-      ...Object.keys(PACKAGE_LABELS).map((key) => ({
-        label: PACKAGE_LABELS[key],
-        value: key
-      }))
-    ];
+  get serviceTierOptions() {
+    return SERVICE_TIERS.map((tier) => ({ label: tier, value: tier }));
   }
 
   get termOptions() {
@@ -331,11 +401,16 @@ export default class PricingTool extends LightningElement {
     }));
   }
 
-  get agentTrackOptions() {
-    return ["none", "web"].map((variant) => ({
-      label: AGENT_TRACK_LABELS[variant],
-      value: variant
+  get agentCountBandOptions() {
+    return AGENT_COUNT_BANDS.map((band) => ({
+      label: band.label,
+      value: band.key
     }));
+  }
+
+  get agentCountRepresentative() {
+    const band = AGENT_COUNT_BANDS.find((b) => b.key === this.agentCountBand);
+    return band ? band.representativeCount : 0;
   }
 
   get ratingsReviewsTierOptions() {
@@ -345,31 +420,60 @@ export default class PricingTool extends LightningElement {
     }));
   }
 
-  get agentTrackDisabled() {
-    return this.agentTrackVariant === "none";
+  get reputationManagementExtraOptions() {
+    return [
+      { label: "Listings Management", value: "listingsManagement" },
+      { label: "Local pages", value: "localPages" }
+    ];
   }
 
-  get ratingsReviewsDisabled() {
-    return !this.ratingsReviewsEnabled;
+  get igniteDigitalExtraOptions() {
+    return IGNITE_DIGITAL_EXTRA_KEYS.map((key) => ({
+      label: IGNITE_DIGITAL_EXTRA_LABELS[key],
+      value: key
+    }));
   }
 
-  // The Plan is the same product as Ignite CX - once a base subscription is included,
-  // Ignite CX isn't an independent choice anymore, so lock the toggle on rather than let
-  // the rep uncheck something that's already priced into the base package.
-  get igniteCxToggleDisabled() {
-    return this.includeBaseSubscription;
+  get igniteDigitalExtrasResult() {
+    return computeIgniteDigitalExtras(this.igniteDigitalExtras, this.mouseflowTier);
   }
 
-  get igniteCxToggleLabel() {
-    return this.includeBaseSubscription
-      ? "Ignite CX (Location Survey) — included with the Plan"
-      : "Ignite CX (Location Survey)";
+  get mouseflowTierOptions() {
+    return IGNITE_DIGITAL_MOUSEFLOW_TIERS.map((tier) => ({
+      label: tier,
+      value: tier
+    }));
   }
 
-  // Ignite CX is priced off the selected Plan's rate card - same computeBaseQuote result
-  // as the base subscription itself, so switching Plan (or Term) always re-prices it.
-  get igniteCxAnnual() {
-    return this.baseQuote.totalAnnual;
+  get mouseflowConfigSelected() {
+    return this.igniteDigitalExtras.includes("mouseflowConfig");
+  }
+
+  get additionalSurveyTypeOptions() {
+    return [
+      { label: "Postship", value: "postship" },
+      { label: "Close the Loop", value: "closeTheLoop" },
+      { label: "Call Center (AgentTrack)", value: "callCenterAgentTrack" }
+    ];
+  }
+
+  get igniteExItemOptions() {
+    return IGNITE_EX_ITEM_KEYS.map((key) => ({
+      label: IGNITE_EX_ITEM_LABELS[key],
+      value: key
+    }));
+  }
+
+  get igniteExPulseSelected() {
+    return this.igniteExSelectedItems.includes("pulse");
+  }
+
+  get igniteExResult() {
+    return computeIgniteEx({
+      selectedItems: this.igniteExSelectedItems,
+      locations: this.locations,
+      pulseQuantity: this.igniteExPulseQuantity
+    });
   }
 
   get communityTierSpec() {
@@ -403,48 +507,21 @@ export default class PricingTool extends LightningElement {
     return !Number.isFinite(this.communityTierSpec.includedAdminUsers);
   }
 
-  // Locations only matters to the pieces that are actually priced per location - the setup
-  // fee formula ($5,000 base + $10/location) still degrades gracefully to a flat $5,000 at
-  // zero locations, so it doesn't force locations to be entered like the others do.
-  get locationsRequiredReasons() {
-    const reasons = [];
-    if (this.includeBaseSubscription) {
-      reasons.push("the base subscription");
-    } else if (this.igniteCxEnabled) {
-      // Ignite CX is the same product as the base subscription/Plan - only call it out as
-      // its own reason on a standalone quote, so it isn't listed twice for the same thing.
-      reasons.push("Ignite CX");
-    }
-    if (this.ratingsReviewsEnabled) {
-      reasons.push("Ratings & Reviews");
-    }
-    return reasons;
-  }
-
-  get locationsRequired() {
-    return this.locationsRequiredReasons.length > 0;
-  }
-
+  // The Ignite Platform base package is always part of every quote now, so Locations is
+  // always required - the setup fee formula still degrades gracefully to a flat $5,000 base
+  // at zero locations, but the base package itself needs a real count.
   get locationsMissing() {
-    return this.locationsRequired && !(Number(this.locations) > 0);
+    return !(Number(this.locations) > 0);
   }
 
   get locationsRequiredMessage() {
-    if (!this.locationsMissing) {
-      return "";
-    }
-    return `Locations is required for: ${this.locationsRequiredReasons.join(", ")}.`;
+    return this.locationsMissing
+      ? "Locations is required for the Ignite Platform base package."
+      : "";
   }
 
   get baseQuote() {
-    return computeBaseQuote(this.selectedPlan, this.locations, this.termMonths);
-  }
-
-  // The Quoted Price summary is meaningful whenever something is actually priced off the
-  // Plan's rate card - the base subscription itself, or a standalone Ignite CX quote (which
-  // now shares the same rate card).
-  get showQuotedPriceSummary() {
-    return this.includeBaseSubscription || this.igniteCxEnabled;
+    return computeBaseQuote(this.serviceTier, this.locations, this.termMonths);
   }
 
   get addOnsResult() {
@@ -454,16 +531,22 @@ export default class PricingTool extends LightningElement {
         additionalSurveys: this.additionalSurveys,
         additionalSurveyRevisions: this.additionalSurveyRevisions,
         additionalIntegrations: this.additionalIntegrations,
-        additionalBrands: this.additionalBrands
+        additionalBrands: this.additionalBrands,
+        additionalPerformance: this.additionalPerformance,
+        additionalAgile: this.additionalAgile,
+        additionalConsultative: this.additionalConsultative
       },
       this.locations
     );
   }
 
   get callCenterResult() {
+    if (!this.agentTrackEnabled) {
+      return { variant: "none", annualTotal: 0, perLocPerMonth: 0 };
+    }
     return computeCallCenter(
       this.agentTrackVariant,
-      this.agentCount,
+      this.agentCountRepresentative,
       this.locations
     );
   }
@@ -491,29 +574,24 @@ export default class PricingTool extends LightningElement {
     return `One-Time Setup Fee ($${this.setupFeeAmount.toLocaleString()})`;
   }
 
-  // The full list-price (pre-discount) recurring total across every product in the quote -
-  // not just the base package - so the Quoted Price section reflects the whole deal, not a
-  // subset of it. One-time fees (Setup Fee, Case Management) are excluded here; they're
-  // shown separately in the Quote Summary below.
+  // The full list-price (pre-discount) recurring total across every product in the quote,
+  // since the base package is now unconditionally part of every quote.
   get recurringListAnnual() {
-    let total = 0;
-    if (this.includeBaseSubscription) {
-      total +=
-        this.baseQuote.totalAnnual +
-        this.addOnsResult.annualTotal +
-        this.callCenterResult.annualTotal;
+    let total = this.baseQuote.totalAnnual + this.addOnsResult.annualTotal;
+    if (this.agentTrackEnabled) {
+      total += this.callCenterResult.annualTotal;
     }
     if (this.ratingsReviewsEnabled) {
       total += this.ratingsReviewsResult.annual;
-    }
-    if (this.igniteCxEnabled && !this.includeBaseSubscription) {
-      total += this.igniteCxAnnual;
     }
     if (this.igniteCommunitiesEnabled) {
       total += this.communityQuote.totalAnnual;
     }
     if (this.igniteDigitalEnabled) {
-      total += IGNITE_DIGITAL_FLAT_FEE;
+      total += this.igniteDigitalExtrasResult.annualTotal;
+    }
+    if (this.igniteExEnabled) {
+      total += this.igniteExResult.annualTotal;
     }
     return round2(total);
   }
@@ -564,9 +642,6 @@ export default class PricingTool extends LightningElement {
     return this.lineItemRequests.map((line) => ({
       ...line,
       key: `${line.productCode}-${line.description}`,
-      isOneTime:
-        line.productCode === SETUP_FEE_PRODUCT_CODE ||
-        line.productCode === CASE_MANAGEMENT_PRODUCT_CODE,
       totalPrice: round2(
         (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0)
       )
@@ -628,43 +703,51 @@ export default class PricingTool extends LightningElement {
       const code = line.productCode;
 
       if (REVERSE_BASE_PACKAGE_PRODUCT_CODES[code]) {
-        this.includeBaseSubscription = true;
-        this.selectedPlan = REVERSE_BASE_PACKAGE_PRODUCT_CODES[code];
+        this.serviceTier = REVERSE_BASE_PACKAGE_PRODUCT_CODES[code];
         recoveredLocations =
           recoveredLocations ?? parseLocationsFromDescription(line.description);
-        if ((line.description || "").includes(IGNITE_CX_INCLUDED_SUFFIX.trim())) {
-          this.igniteCxEnabled = true;
-        }
         continue;
       }
 
       if (ADD_ON_STATE_FIELD_BY_PRODUCT_CODE[code]) {
         this[ADD_ON_STATE_FIELD_BY_PRODUCT_CODE[code]] =
           Number(line.quantity) || 0;
+        if (code === "ADDON-SURVEY") {
+          this.additionalSurveyTypes = parseIncludedExtrasFromDescription(
+            line.description,
+            REVERSE_ADDITIONAL_SURVEY_TYPE_LABELS
+          );
+        }
         continue;
       }
 
       if (REVERSE_AGENT_TRACK_PRODUCT_CODES[code]) {
+        this.agentTrackEnabled = true;
         this.agentTrackVariant = REVERSE_AGENT_TRACK_PRODUCT_CODES[code];
-        this.agentCount = parseAgentCountFromDescription(line.description);
+        this.agentCountBand = parseAgentBandFromDescription(line.description);
         continue;
       }
 
       if (REVERSE_RATINGS_REVIEWS_PRODUCT_CODES[code]) {
         this.ratingsReviewsEnabled = true;
         this.ratingsReviewsTier = REVERSE_RATINGS_REVIEWS_PRODUCT_CODES[code];
+        this.reputationManagementExtras = parseIncludedExtrasFromDescription(
+          line.description,
+          REVERSE_REPUTATION_EXTRA_LABELS
+        );
         continue;
       }
 
-      if (code === IGNITE_CX_PRODUCT_CODE) {
-        this.igniteCxEnabled = true;
-        recoveredLocations =
-          recoveredLocations ?? parseLocationsFromDescription(line.description);
-        continue;
-      }
-
-      if (code === IGNITE_EX_PRODUCT_CODE) {
+      if (REVERSE_IGNITE_EX_PRODUCT_CODES[code]) {
         this.igniteExEnabled = true;
+        const lineKey = REVERSE_IGNITE_EX_PRODUCT_CODES[code];
+        const itemKey = IGNITE_EX_ITEM_KEY_BY_LINE_KEY[lineKey];
+        if (itemKey && !this.igniteExSelectedItems.includes(itemKey)) {
+          this.igniteExSelectedItems = [...this.igniteExSelectedItems, itemKey];
+        }
+        if (itemKey === "pulse") {
+          this.igniteExPulseQuantity = Number(line.quantity) || 0;
+        }
         continue;
       }
 
@@ -677,6 +760,20 @@ export default class PricingTool extends LightningElement {
           this.communityTier = communityConfig.tier;
           this.communityMarkets = communityConfig.markets;
           this.communitySizePerMarket = communityConfig.communitySizePerMarket;
+        }
+        continue;
+      }
+
+      if (REVERSE_IGNITE_DIGITAL_EXTRA_PRODUCT_CODES[code]) {
+        this.igniteDigitalEnabled = true;
+        const extraKey = REVERSE_IGNITE_DIGITAL_EXTRA_PRODUCT_CODES[code];
+        if (!this.igniteDigitalExtras.includes(extraKey)) {
+          this.igniteDigitalExtras = [...this.igniteDigitalExtras, extraKey];
+        }
+        if (extraKey === "mouseflowConfig") {
+          this.mouseflowTier = parseMouseflowTierFromDescription(
+            line.description
+          );
         }
         continue;
       }
@@ -700,7 +797,6 @@ export default class PricingTool extends LightningElement {
     if (recoveredLocations !== null) {
       this.locations = recoveredLocations;
     }
-    this.selectedPackage = "";
 
     this.dispatchEvent(
       new ShowToastEvent({
@@ -719,32 +815,35 @@ export default class PricingTool extends LightningElement {
         productCode: ADD_ON_PRODUCT_CODES[line.key],
         quantity: line.quantity,
         unitPrice: round2(this.applyDiscount(line.annualTotal) / line.quantity),
-        description: line.label
+        description:
+          line.key === "additionalSurveys"
+            ? appendIncludedExtras(
+                line.label,
+                this.additionalSurveyTypes,
+                ADDITIONAL_SURVEY_TYPE_LABELS
+              )
+            : line.label,
+        isOneTime: false
       }));
   }
 
   buildCommonLineItems() {
     const lines = [];
 
-    // When a base subscription is also being quoted, Ignite CX's location cost is already
-    // folded into the base package price - only bill it as its own line on a standalone
-    // (no base subscription) quote.
-    if (this.igniteCxEnabled && !this.includeBaseSubscription) {
-      lines.push({
-        productCode: IGNITE_CX_PRODUCT_CODE,
-        quantity: 1,
-        unitPrice: this.applyDiscount(this.igniteCxAnnual),
-        description: `Ignite CX — ${this.locations} locations`
-      });
-    }
-
     if (this.igniteExEnabled) {
-      lines.push({
-        productCode: IGNITE_EX_PRODUCT_CODE,
-        quantity: 1,
-        unitPrice: 0,
-        description: "Ignite EX (price TBD)"
-      });
+      for (const line of this.igniteExResult.lines) {
+        lines.push({
+          productCode: IGNITE_EX_PRODUCT_CODES[line.key],
+          quantity: line.quantity,
+          unitPrice: this.applyDiscount(line.unitPrice),
+          description: `Ignite EX — ${line.label}${
+            line.isCustomPricing
+              ? " (price TBD — custom, see deal desk)"
+              : ""
+          }`,
+          isOneTime: line.isOneTime
+        });
+      }
     }
 
     if (this.igniteCommunitiesEnabled) {
@@ -753,17 +852,21 @@ export default class PricingTool extends LightningElement {
         productCode: IGNITE_COMMUNITIES_PRODUCT_CODE,
         quantity: 1,
         unitPrice: this.applyDiscount(quote.totalAnnual),
-        description: `Ignite Communities — ${quote.label}, ${quote.markets} market(s), ${quote.communitySizePerMarket}/market`
+        description: `Ignite Communities — ${quote.label}, ${quote.markets} market(s), ${quote.communitySizePerMarket}/market`,
+        isOneTime: false
       });
     }
 
     if (this.igniteDigitalEnabled) {
-      lines.push({
-        productCode: IGNITE_DIGITAL_PRODUCT_CODE,
-        quantity: 1,
-        unitPrice: this.applyDiscount(IGNITE_DIGITAL_FLAT_FEE),
-        description: "Ignite Digital"
-      });
+      for (const line of this.igniteDigitalExtrasResult.lines) {
+        lines.push({
+          productCode: IGNITE_DIGITAL_EXTRA_PRODUCT_CODES[line.key],
+          quantity: line.quantity,
+          unitPrice: this.applyDiscount(line.unitPrice),
+          description: `Ignite Digital — ${line.label}`,
+          isOneTime: false
+        });
+      }
     }
 
     if (this.caseManagementEnabled) {
@@ -771,7 +874,8 @@ export default class PricingTool extends LightningElement {
         productCode: CASE_MANAGEMENT_PRODUCT_CODE,
         quantity: 1,
         unitPrice: CASE_MANAGEMENT_FEE,
-        description: "Case management build"
+        description: "Case Premium",
+        isOneTime: true
       });
     }
 
@@ -780,7 +884,8 @@ export default class PricingTool extends LightningElement {
         productCode: SETUP_FEE_PRODUCT_CODE,
         quantity: 1,
         unitPrice: this.setupFeeAmount,
-        description: "Setup fee"
+        description: "Setup fee",
+        isOneTime: true
       });
     }
 
@@ -790,30 +895,25 @@ export default class PricingTool extends LightningElement {
   get lineItemRequests() {
     const lines = [];
 
-    // Add-Ons and AgentTrack are priced "over and above base package" - only meaningful
-    // (and only synced) when the rep is actually quoting the base subscription.
-    if (this.includeBaseSubscription) {
-      lines.push({
-        productCode: BASE_PACKAGE_PRODUCT_CODES[this.selectedPlan],
-        quantity: 1,
-        unitPrice: this.applyDiscount(this.baseQuote.totalAnnual),
-        description: `${this.selectedPlan} — ${this.locations} locations${
-          this.igniteCxEnabled ? IGNITE_CX_INCLUDED_SUFFIX : ""
-        }`
-      });
-      lines.push(...this.buildAddOnLineItems(this.addOnsResult.lines));
+    lines.push({
+      productCode: BASE_PACKAGE_PRODUCT_CODES[this.serviceTier],
+      quantity: 1,
+      unitPrice: this.applyDiscount(this.baseQuote.totalAnnual),
+      description: `Ignite Platform (${this.serviceTier}) — ${this.locations} locations${
+        this.baseQuote.isPriceTBD ? " (price TBD)" : ""
+      }`,
+      isOneTime: false
+    });
+    lines.push(...this.buildAddOnLineItems(this.addOnsResult.lines));
 
-      if (
-        this.agentTrackVariant !== "none" &&
-        this.callCenterResult.annualTotal > 0
-      ) {
-        lines.push({
-          productCode: AGENT_TRACK_PRODUCT_CODES[this.agentTrackVariant],
-          quantity: 1,
-          unitPrice: this.applyDiscount(this.callCenterResult.annualTotal),
-          description: `AgentTrack (${AGENT_TRACK_LABELS[this.agentTrackVariant]}) — ${this.agentCount} agents`
-        });
-      }
+    if (this.agentTrackEnabled && this.callCenterResult.annualTotal > 0) {
+      lines.push({
+        productCode: AGENT_TRACK_PRODUCT_CODES[this.agentTrackVariant],
+        quantity: 1,
+        unitPrice: this.applyDiscount(this.callCenterResult.annualTotal),
+        description: `AgentTrack (${AGENT_TRACK_LABELS[this.agentTrackVariant]}) — ${this.agentCountBand} agents`,
+        isOneTime: false
+      });
     }
 
     if (this.ratingsReviewsEnabled) {
@@ -821,7 +921,12 @@ export default class PricingTool extends LightningElement {
         productCode: RATINGS_REVIEWS_PRODUCT_CODES[this.ratingsReviewsTier],
         quantity: 1,
         unitPrice: this.applyDiscount(this.ratingsReviewsResult.annual),
-        description: `Ratings & Reviews (${RATINGS_REVIEWS_TIER_LABELS[this.ratingsReviewsTier]}) — ${this.ratingsReviewsResult.bracket} locations`
+        description: appendIncludedExtras(
+          `Reputation Management (${RATINGS_REVIEWS_TIER_LABELS[this.ratingsReviewsTier]}) — ${this.ratingsReviewsResult.bracket} locations`,
+          this.reputationManagementExtras,
+          REPUTATION_EXTRA_LABELS
+        ),
+        isOneTime: false
       });
     }
 
@@ -833,57 +938,33 @@ export default class PricingTool extends LightningElement {
     this.locations = Number.isFinite(value) && value > 0 ? value : 0;
   }
 
-  handleIncludeBaseSubscriptionToggle(event) {
-    this.includeBaseSubscription = event.target.checked;
-    // The Plan is the same product as Ignite CX - quoting a base subscription always
-    // includes it, so there's nothing left for the rep to separately opt into.
-    if (this.includeBaseSubscription) {
-      this.igniteCxEnabled = true;
-    }
-  }
-
-  // Picking a Plan directly (not via Package) resets its default add-on bundle: Standard
-  // plans default to Ignite CX only, Pro plans default to CX + Ratings & Reviews + Ignite
-  // Digital. Solution Support Only has no default bundle - toggles are left as-is.
-  handlePlanChange(event) {
-    this.selectedPlan = event.detail.value;
-    if (this.selectedPlan.startsWith("Standard/")) {
-      this.igniteCxEnabled = true;
-      this.ratingsReviewsEnabled = false;
-      this.igniteDigitalEnabled = false;
-    } else if (this.selectedPlan.startsWith("Pro/")) {
-      this.igniteCxEnabled = true;
-      this.ratingsReviewsEnabled = true;
-      this.igniteDigitalEnabled = true;
-    }
+  handleServiceTierChange(event) {
+    this.serviceTier = event.detail.value;
   }
 
   handleTermChange(event) {
     this.termMonths = event.detail.value;
   }
 
-  handlePackageChange(event) {
-    const packageKey = event.detail.value;
-    this.selectedPackage = packageKey;
-    const defaults = PACKAGE_DEFAULTS[packageKey];
-    if (defaults) {
-      this.includeBaseSubscription = true;
-      this.selectedPlan = defaults.selectedPlan;
-      this.ratingsReviewsEnabled = true;
-      this.ratingsReviewsTier = defaults.ratingsReviewsTier;
-      this.igniteCxEnabled = defaults.igniteCxEnabled;
-      this.igniteExEnabled = defaults.igniteExEnabled;
-      this.igniteCommunitiesEnabled = defaults.igniteCommunitiesEnabled;
-      this.igniteDigitalEnabled = defaults.igniteDigitalEnabled;
+  handleIgniteExToggle(event) {
+    this.igniteExEnabled = event.target.checked;
+    if (!this.igniteExEnabled) {
+      this.igniteExSelectedItems = [];
+      this.igniteExPulseQuantity = 0;
     }
   }
 
-  handleIgniteCxToggle(event) {
-    this.igniteCxEnabled = event.target.checked;
+  handleIgniteExItemsChange(event) {
+    this.igniteExSelectedItems = event.detail.value;
+    if (!this.igniteExSelectedItems.includes("pulse")) {
+      this.igniteExPulseQuantity = 0;
+    }
   }
 
-  handleIgniteExToggle(event) {
-    this.igniteExEnabled = event.target.checked;
+  handleIgniteExPulseQuantityChange(event) {
+    const value = Number(event.target.value);
+    this.igniteExPulseQuantity =
+      Number.isFinite(value) && value > 0 ? value : 0;
   }
 
   handleIgniteCommunitiesToggle(event) {
@@ -928,6 +1009,21 @@ export default class PricingTool extends LightningElement {
 
   handleIgniteDigitalToggle(event) {
     this.igniteDigitalEnabled = event.target.checked;
+    if (!this.igniteDigitalEnabled) {
+      this.igniteDigitalExtras = [];
+      this.mouseflowTier = "Essential";
+    }
+  }
+
+  handleIgniteDigitalExtrasChange(event) {
+    this.igniteDigitalExtras = event.detail.value;
+    if (!this.igniteDigitalExtras.includes("mouseflowConfig")) {
+      this.mouseflowTier = "Essential";
+    }
+  }
+
+  handleMouseflowTierChange(event) {
+    this.mouseflowTier = event.detail.value;
   }
 
   handleCaseManagementToggle(event) {
@@ -942,26 +1038,40 @@ export default class PricingTool extends LightningElement {
     const field = event.target.dataset.field;
     const value = Number(event.target.value);
     this[field] = Number.isFinite(value) && value > 0 ? value : 0;
-  }
-
-  handleAgentTrackVariantChange(event) {
-    this.agentTrackVariant = event.detail.value;
-    if (this.agentTrackVariant === "none") {
-      this.agentCount = 0;
+    if (field === "additionalSurveys" && this.additionalSurveys === 0) {
+      this.additionalSurveyTypes = [];
     }
   }
 
-  handleAgentCountChange(event) {
-    const value = Number(event.target.value);
-    this.agentCount = Number.isFinite(value) && value > 0 ? value : 0;
+  handleAdditionalSurveyTypesChange(event) {
+    this.additionalSurveyTypes = event.detail.value;
+  }
+
+  handleAgentTrackToggle(event) {
+    this.agentTrackEnabled = event.target.checked;
+    this.agentTrackVariant = this.agentTrackEnabled ? "web" : "none";
+    if (!this.agentTrackEnabled) {
+      this.agentCountBand = "0-60";
+    }
+  }
+
+  handleAgentCountBandChange(event) {
+    this.agentCountBand = event.detail.value;
   }
 
   handleRatingsReviewsToggle(event) {
     this.ratingsReviewsEnabled = event.target.checked;
+    if (!this.ratingsReviewsEnabled) {
+      this.reputationManagementExtras = [];
+    }
   }
 
   handleRatingsReviewsTierChange(event) {
     this.ratingsReviewsTier = event.detail.value;
+  }
+
+  handleReputationManagementExtrasChange(event) {
+    this.reputationManagementExtras = event.detail.value;
   }
 
   handleDiscountChange(event) {

@@ -6,93 +6,104 @@ import {
   computeCallCenter,
   computeRatingsReviews,
   computeCommunityQuote,
+  computeIgniteEx,
+  computeIgniteDigitalExtras,
   getDiscountGuidance,
-  PLANS,
+  SERVICE_TIERS,
   LOCATION_BANDS,
-  ANNUAL_MINIMUM_FLOOR
+  ANNUAL_MINIMUM_FLOOR,
+  AGENT_COUNT_BANDS
 } from "c/pricingEngine";
 
+const RATE_CARD_TIERS = SERVICE_TIERS.filter((tier) => tier !== "Elite");
+
 describe("computeBaseQuote", () => {
-  it("matches the REVISED Pricing Table's Pro/Advanced $/location/month band rates", () => {
-    expect(computeBaseQuote("Pro/Advanced", 125, 36).listRatePerLocationPerMonth).toBe(80);
-    expect(computeBaseQuote("Pro/Advanced", 225, 36).listRatePerLocationPerMonth).toBe(58);
-    expect(computeBaseQuote("Pro/Advanced", 450, 36).listRatePerLocationPerMonth).toBeCloseTo(32.44, 2);
-    expect(computeBaseQuote("Pro/Advanced", 900, 36).listRatePerLocationPerMonth).toBeCloseTo(30.17, 2);
-    expect(computeBaseQuote("Pro/Advanced", 1800, 36).listRatePerLocationPerMonth).toBeCloseTo(27.15, 2);
-    expect(computeBaseQuote("Pro/Advanced", 3500, 36).listRatePerLocationPerMonth).toBeCloseTo(23.89, 2);
-    expect(computeBaseQuote("Pro/Advanced", 6000, 36).listRatePerLocationPerMonth).toBeCloseTo(20.55, 2);
+  it("matches the REVISED Pricing Table's Advanced tier $/location/month band rates", () => {
+    expect(computeBaseQuote("Advanced", 125, 36).listRatePerLocationPerMonth).toBe(72);
+    expect(computeBaseQuote("Advanced", 225, 36).listRatePerLocationPerMonth).toBe(52.2);
+    expect(computeBaseQuote("Advanced", 450, 36).listRatePerLocationPerMonth).toBe(25);
+    expect(computeBaseQuote("Advanced", 900, 36).listRatePerLocationPerMonth).toBe(23.25);
+    // The raw table rate (20.925/18.414/15.83604) has more precision than round2 keeps (2
+    // decimal places) - listRatePerLocationPerMonth is always the rounded figure, same as the
+    // original 5-plan rate card's many-decimal Pro/Advanced rates were.
+    expect(computeBaseQuote("Advanced", 1800, 36).listRatePerLocationPerMonth).toBe(20.93);
+    expect(computeBaseQuote("Advanced", 3500, 36).listRatePerLocationPerMonth).toBe(18.41);
+    expect(computeBaseQuote("Advanced", 6000, 36).listRatePerLocationPerMonth).toBe(15.84);
   });
 
-  it("matches the REVISED Pricing Table's per-plan rates in the 151-300 band", () => {
-    expect(computeBaseQuote("Standard/Advanced", 225, 36).listRatePerLocationPerMonth).toBe(52.2);
-    expect(computeBaseQuote("Pro/Foundational", 225, 36).listRatePerLocationPerMonth).toBe(48.14);
-    expect(computeBaseQuote("Standard/Foundational", 225, 36).listRatePerLocationPerMonth).toBe(43.5);
-    expect(computeBaseQuote("Solution Support Only", 225, 36).listRatePerLocationPerMonth).toBe(31.9);
+  it("matches the REVISED Pricing Table's per-tier rates in the 151-300 band", () => {
+    expect(computeBaseQuote("Advanced", 225, 36).listRatePerLocationPerMonth).toBe(52.2);
+    expect(computeBaseQuote("Foundational", 225, 36).listRatePerLocationPerMonth).toBe(43.5);
   });
 
   it("prices the 1-100 location band as a flat annual fee, not a $/location/month rate", () => {
-    const flatFeesByPlan = {
-      "Pro/Advanced": 144000,
-      "Standard/Advanced": 120000,
-      "Pro/Foundational": 80000,
-      "Standard/Foundational": 60000,
-      "Solution Support Only": 44000
+    const flatFeesByTier = {
+      Advanced: 120000,
+      Foundational: 60000
     };
-    for (const plan of PLANS) {
-      expect(computeBaseQuote(plan, 50, 36).totalAnnual).toBe(flatFeesByPlan[plan]);
-      expect(computeBaseQuote(plan, 100, 36).totalAnnual).toBe(flatFeesByPlan[plan]);
+    for (const tier of RATE_CARD_TIERS) {
+      expect(computeBaseQuote(tier, 50, 36).totalAnnual).toBe(flatFeesByTier[tier]);
+      expect(computeBaseQuote(tier, 100, 36).totalAnnual).toBe(flatFeesByTier[tier]);
     }
   });
 
-  it("matches the 2,501-5,000 band exactly for Pro/Advanced at 3,500 locations", () => {
-    const result = computeBaseQuote("Pro/Advanced", 3500, 36);
-    expect(result.totalAnnual).toBe(1003380);
+  it("matches the 2,501-5,000 band exactly for Advanced at 3,500 locations", () => {
+    // Uses the rounded 18.41 rate (see the band-rates test above), not the raw 18.414 -
+    // 18.41 x 3,500 x 12.
+    const result = computeBaseQuote("Advanced", 3500, 36);
+    expect(result.totalAnnual).toBe(773220);
   });
 
   it("flags locations above 5,000 as custom pricing", () => {
-    expect(computeBaseQuote("Pro/Advanced", 3500, 36).isCustomPricing).toBe(false);
-    expect(computeBaseQuote("Pro/Advanced", 5001, 36).isCustomPricing).toBe(true);
+    expect(computeBaseQuote("Advanced", 3500, 36).isCustomPricing).toBe(false);
+    expect(computeBaseQuote("Advanced", 5001, 36).isCustomPricing).toBe(true);
   });
 
-  it("defines the annual minimum floors by plan tier", () => {
+  it("defines the annual minimum floors by service tier", () => {
     expect(ANNUAL_MINIMUM_FLOOR.advanced).toBe(80000);
     expect(ANNUAL_MINIMUM_FLOOR.foundational).toBe(60000);
-    expect(ANNUAL_MINIMUM_FLOOR.supportOnly).toBe(36000);
   });
 
-  it("never needs to apply the annual minimum floor under the new rate card - every plan's flat 1-100 fee already clears its own floor", () => {
-    for (const plan of PLANS) {
-      expect(computeBaseQuote(plan, 50, 36).floorApplied).toBe(false);
+  it("never needs to apply the annual minimum floor under the new rate card - every tier's flat 1-100 fee already clears its own floor", () => {
+    for (const tier of RATE_CARD_TIERS) {
+      expect(computeBaseQuote(tier, 50, 36).floorApplied).toBe(false);
     }
   });
 
   it("does not apply the floor once the raw annual clears it", () => {
-    const result = computeBaseQuote("Pro/Advanced", 900, 36);
+    const result = computeBaseQuote("Advanced", 900, 36);
     expect(result.floorApplied).toBe(false);
-    expect(result.totalAnnual).toBe(325836);
+    expect(result.totalAnnual).toBe(251100);
   });
 
   it("applies the 24-month (+5%) and 12-month (+10%) term premiums", () => {
-    // Pro/Advanced 601-1,200 band rate (REVISED Pricing Table) - compare against this raw
+    // Advanced 601-1,200 band rate (REVISED Pricing Table) - compare against this raw
     // rate directly rather than the already-rounded 36-month result, since chaining two
     // roundings (rate -> term36 -> *1.1) can drift past a tight toBeCloseTo tolerance.
-    const baseRate = 30.166875;
-    const term36 = computeBaseQuote("Pro/Advanced", 900, 36).listRatePerLocationPerMonth;
-    const term24 = computeBaseQuote("Pro/Advanced", 900, 24).listRatePerLocationPerMonth;
-    const term12 = computeBaseQuote("Pro/Advanced", 900, 12).listRatePerLocationPerMonth;
+    const baseRate = 23.25;
+    const term36 = computeBaseQuote("Advanced", 900, 36).listRatePerLocationPerMonth;
+    const term24 = computeBaseQuote("Advanced", 900, 24).listRatePerLocationPerMonth;
+    const term12 = computeBaseQuote("Advanced", 900, 12).listRatePerLocationPerMonth;
     expect(term36).toBeCloseTo(baseRate, 2);
     expect(term24).toBeCloseTo(baseRate * 1.05, 2);
     expect(term12).toBeCloseTo(baseRate * 1.1, 2);
   });
 
   it("applies the term premium to the flat 1-100 fee too", () => {
-    const term36 = computeBaseQuote("Pro/Advanced", 50, 36).totalAnnual;
-    const term12 = computeBaseQuote("Pro/Advanced", 50, 12).totalAnnual;
+    const term36 = computeBaseQuote("Advanced", 50, 36).totalAnnual;
+    const term12 = computeBaseQuote("Advanced", 50, 12).totalAnnual;
     expect(term12).toBeCloseTo(term36 * 1.1, 2);
   });
 
-  it("throws for an unknown plan", () => {
-    expect(() => computeBaseQuote("Elite", 100, 36)).toThrow();
+  it("throws for an unknown service tier", () => {
+    expect(() => computeBaseQuote("Bogus", 100, 36)).toThrow();
+  });
+
+  it("quotes Elite as a real $0 line flagged price-TBD, skipping the band lookup entirely", () => {
+    const result = computeBaseQuote("Elite", 900, 36);
+    expect(result.totalAnnual).toBe(0);
+    expect(result.isPriceTBD).toBe(true);
+    expect(result.isCustomPricing).toBe(false);
   });
 });
 
@@ -105,15 +116,39 @@ describe("LOCATION_BANDS", () => {
     expect(LOCATION_BANDS[LOCATION_BANDS.length - 1].max).toBe(Infinity);
   });
 
-  it("gives every plan a rate (flat fee or $/location/month) in every band", () => {
+  it("gives every rate-card tier a rate (flat fee or $/location/month) in every band", () => {
     for (const band of LOCATION_BANDS) {
       const rateMap = band.isFlatFee
         ? band.flatAnnualFeeByPlan
         : band.ratePerLocationPerMonthByPlan;
-      for (const plan of PLANS) {
-        expect(typeof rateMap[plan]).toBe("number");
+      for (const tier of RATE_CARD_TIERS) {
+        expect(typeof rateMap[tier]).toBe("number");
       }
     }
+  });
+});
+
+describe("AGENT_COUNT_BANDS", () => {
+  it("defines exactly the three bands the Number of Agents picklist exposes", () => {
+    expect(AGENT_COUNT_BANDS.map((band) => band.key)).toEqual([
+      "0-60",
+      "60-100",
+      "100-200"
+    ]);
+  });
+
+  it("gives each band a representative agent count that feeds computeCallCenter's existing tiers", () => {
+    expect(
+      AGENT_COUNT_BANDS.find((band) => band.key === "0-60").representativeCount
+    ).toBe(30);
+    expect(
+      AGENT_COUNT_BANDS.find((band) => band.key === "60-100")
+        .representativeCount
+    ).toBe(80);
+    expect(
+      AGENT_COUNT_BANDS.find((band) => band.key === "100-200")
+        .representativeCount
+    ).toBe(150);
   });
 });
 
@@ -133,7 +168,7 @@ describe("computeSetupFee", () => {
 });
 
 describe("computeThreeYearProjection", () => {
-  it("matches the Deal Calculator sheet's worked example (800 locations, Pro/Advanced, 36mo)", () => {
+  it("matches the Deal Calculator sheet's worked example (800 locations, Advanced, 36mo)", () => {
     const result = computeThreeYearProjection(326400);
     expect(result.year1).toBe(326400);
     expect(result.year2).toBeCloseTo(339456, 2);
@@ -154,6 +189,14 @@ describe("computeAddOns", () => {
     expect(result.annualTotal).toBe(6000);
     // $/loc/mo = 6000 / 300 / 12
     expect(result.perLocPerMonth).toBeCloseTo(1.67, 2);
+  });
+
+  it("prices additional Performance, Agile, and Consultative units at their flat per-unit rates", () => {
+    const result = computeAddOns(
+      { additionalPerformance: 2, additionalAgile: 1, additionalConsultative: 1 },
+      300
+    );
+    expect(result.annualTotal).toBe(2 * 12000 + 15000 + 35000);
   });
 });
 
@@ -320,6 +363,113 @@ describe("computeCommunityQuote", () => {
     expect(() =>
       computeCommunityQuote({ tier: "Nope", numberOfMarkets: 1 })
     ).toThrow();
+  });
+});
+
+describe("computeIgniteEx", () => {
+  it("prices the Long Form Annual Survey engagement tiers off the location band", () => {
+    const result = computeIgniteEx({
+      selectedItems: ["engagementOneConsultative"],
+      locations: 600,
+      pulseQuantity: 0
+    });
+    expect(result.lines).toHaveLength(1);
+    expect(result.lines[0].unitPrice).toBe(135000);
+    expect(result.annualTotal).toBe(135000);
+    expect(result.oneTimeTotal).toBe(0);
+  });
+
+  it("prices Pulse as $20,000 + $5,000 agile-analysis fee per pulse, one-time", () => {
+    const result = computeIgniteEx({
+      selectedItems: ["pulse"],
+      locations: 600,
+      pulseQuantity: 3
+    });
+    expect(result.lines[0].quantity).toBe(3);
+    expect(result.lines[0].unitPrice).toBe(25000);
+    expect(result.oneTimeTotal).toBe(75000);
+    expect(result.annualTotal).toBe(0);
+  });
+
+  it("does not add a Pulse line when Pulse is selected but the quantity is zero", () => {
+    const result = computeIgniteEx({
+      selectedItems: ["pulse"],
+      locations: 600,
+      pulseQuantity: 0
+    });
+    expect(result.lines).toHaveLength(0);
+  });
+
+  it("splits Onboard, Exit, and Always-On into a one-time setup line and a recurring annual line", () => {
+    const result = computeIgniteEx({
+      selectedItems: ["onboard"],
+      locations: 600,
+      pulseQuantity: 0
+    });
+    expect(result.lines).toHaveLength(2);
+    expect(result.oneTimeTotal).toBe(10000);
+    expect(result.annualTotal).toBe(5000);
+  });
+
+  it("prices Staggered Onboard, 2 Agile Analyses, Performance Insight, and Consultative as flat one-time fees", () => {
+    const result = computeIgniteEx({
+      selectedItems: [
+        "staggeredOnboard",
+        "agileAnalysesPair",
+        "performanceInsight",
+        "consultative"
+      ],
+      locations: 600,
+      pulseQuantity: 0
+    });
+    expect(result.oneTimeTotal).toBe(40000 + 10000 + 8000 + 28000);
+    expect(result.annualTotal).toBe(0);
+  });
+
+  it("flags 10,000+ locations as custom pricing for the banded items", () => {
+    const result = computeIgniteEx({
+      selectedItems: ["engagementOneConsultative"],
+      locations: 10500,
+      pulseQuantity: 0
+    });
+    expect(result.isCustomPricing).toBe(true);
+    expect(result.lines[0].unitPrice).toBe(0);
+  });
+});
+
+describe("computeIgniteDigitalExtras", () => {
+  it("prices Mouseflow Config by its own Essential/Advanced/Elite tier, independent of Service Tier", () => {
+    expect(
+      computeIgniteDigitalExtras(["mouseflowConfig"], "Essential").annualTotal
+    ).toBe(45000);
+    expect(
+      computeIgniteDigitalExtras(["mouseflowConfig"], "Advanced").annualTotal
+    ).toBe(75000);
+    expect(
+      computeIgniteDigitalExtras(["mouseflowConfig"], "Elite").annualTotal
+    ).toBe(110000);
+  });
+
+  it("prices Contact Us (Inform) as a flat $30,000/year regardless of Mouseflow tier", () => {
+    expect(
+      computeIgniteDigitalExtras(["contactUs"], "Essential").annualTotal
+    ).toBe(30000);
+    expect(
+      computeIgniteDigitalExtras(["contactUs"], "Elite").annualTotal
+    ).toBe(30000);
+  });
+
+  it("sums both extras when both are selected", () => {
+    const result = computeIgniteDigitalExtras(
+      ["mouseflowConfig", "contactUs"],
+      "Advanced"
+    );
+    expect(result.lines).toHaveLength(2);
+    expect(result.annualTotal).toBe(75000 + 30000);
+  });
+
+  it("returns no lines when nothing is selected", () => {
+    expect(computeIgniteDigitalExtras([], "Advanced").lines).toHaveLength(0);
   });
 });
 

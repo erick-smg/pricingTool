@@ -9,8 +9,6 @@ import {
   COMMUNITY_TIER_SPECS
 } from "c/pricingEngine";
 
-const IGNITE_DIGITAL_FLAT_FEE = 40000;
-
 function round2(value) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
@@ -32,21 +30,22 @@ describe("c-pricing-tool", () => {
     }
   });
 
-  it("renders with a default plan, term, and location count", async () => {
+  it("renders with a default service tier, term, and location count", async () => {
     const element = createTool();
     await flush();
 
     const locationsInput = element.shadowRoot.querySelector(
       '[data-id="locations-input"]'
     );
-    // Defaults to 0, not a placeholder count - custom quotes don't all need locations,
-    // and locationsRequired/locationsMissing enforce it only when something needs it.
     expect(locationsInput.value).toBe(0);
 
-    const planCombobox = element.shadowRoot.querySelector(
-      '[data-id="plan-combobox"]'
+    const serviceTierCombobox = element.shadowRoot.querySelector(
+      '[data-id="service-tier-combobox"]'
     );
-    expect(planCombobox.value).toBe("Pro/Advanced");
+    expect(serviceTierCombobox.value).toBe("Foundational");
+    expect(
+      serviceTierCombobox.options.map((option) => option.value)
+    ).toEqual(["Foundational", "Advanced", "Elite"]);
 
     const termCombobox = element.shadowRoot.querySelector(
       '[data-id="term-combobox"]'
@@ -54,7 +53,7 @@ describe("c-pricing-tool", () => {
     expect(termCombobox.value).toBe("36");
   });
 
-  it("keeps the Plan combobox visible at every location count, including above 5,000", async () => {
+  it("keeps the Service Tier combobox visible at every location count, including above 5,000", async () => {
     const element = createTool();
     await flush();
 
@@ -66,7 +65,7 @@ describe("c-pricing-tool", () => {
     await flush();
 
     expect(
-      element.shadowRoot.querySelector('[data-id="plan-combobox"]')
+      element.shadowRoot.querySelector('[data-id="service-tier-combobox"]')
     ).not.toBeNull();
   });
 
@@ -86,6 +85,34 @@ describe("c-pricing-tool", () => {
     expect(banner.textContent).toContain("custom pricing");
   });
 
+  it("shows a price-TBD warning and quotes $0 when the Elite service tier is selected", async () => {
+    const element = createTool();
+    await flush();
+
+    const locationsInput = element.shadowRoot.querySelector(
+      '[data-id="locations-input"]'
+    );
+    locationsInput.value = 500;
+    locationsInput.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const serviceTierCombobox = element.shadowRoot.querySelector(
+      '[data-id="service-tier-combobox"]'
+    );
+    serviceTierCombobox.dispatchEvent(
+      new CustomEvent("change", { detail: { value: "Elite" } })
+    );
+    await flush();
+
+    const banner = element.shadowRoot.querySelector(".slds-notify_alert");
+    expect(banner.textContent).toContain("no rate card yet");
+
+    expect(
+      element.shadowRoot.querySelector('[data-id="quoted-price-annual"]')
+        .value
+    ).toBe(0);
+  });
+
   it("applies the term premium when a shorter term is selected", async () => {
     const element = createTool();
     await flush();
@@ -101,40 +128,40 @@ describe("c-pricing-tool", () => {
     expect(termCombobox.value).toBe("12");
   });
 
-  it("only offers None and Web Only for the AgentTrack variant", async () => {
+  it("reveals Agent Experience and the Number of Agents band picklist once AgentTrack is checked", async () => {
     const element = createTool();
     await flush();
 
-    const variantCombobox = element.shadowRoot.querySelector(
-      '[data-id="agent-track-variant"]'
+    expect(
+      element.shadowRoot.querySelector('[data-id="agent-count-band-combobox"]')
+    ).toBeNull();
+
+    const toggle = element.shadowRoot.querySelector(
+      '[data-id="agent-track-toggle"]'
     );
-    expect(variantCombobox.options.map((option) => option.value)).toEqual([
-      "none",
-      "web"
+    toggle.checked = true;
+    toggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const bandCombobox = element.shadowRoot.querySelector(
+      '[data-id="agent-count-band-combobox"]'
+    );
+    expect(bandCombobox).not.toBeNull();
+    expect(bandCombobox.value).toBe("0-60");
+    expect(bandCombobox.options.map((option) => option.value)).toEqual([
+      "0-60",
+      "60-100",
+      "100-200"
     ]);
   });
 
-  it("enables the agent count input once an AgentTrack variant is selected", async () => {
+  it("reveals the Reputation Management tier and extras once toggled on", async () => {
     const element = createTool();
     await flush();
 
-    const variantCombobox = element.shadowRoot.querySelector(
-      '[data-id="agent-track-variant"]'
-    );
-    variantCombobox.dispatchEvent(
-      new CustomEvent("change", { detail: { value: "web" } })
-    );
-    await flush();
-
-    const agentCountInput = element.shadowRoot.querySelector(
-      '[data-id="agent-count-input"]'
-    );
-    expect(agentCountInput.disabled).toBe(false);
-  });
-
-  it("enables the Ratings & Reviews tier selector once the product is toggled on", async () => {
-    const element = createTool();
-    await flush();
+    expect(
+      element.shadowRoot.querySelector('[data-id="rr-tier-radio-group"]')
+    ).toBeNull();
 
     const toggle = element.shadowRoot.querySelector('[data-id="rr-toggle"]');
     toggle.checked = true;
@@ -144,79 +171,220 @@ describe("c-pricing-tool", () => {
     const tierGroup = element.shadowRoot.querySelector(
       '[data-id="rr-tier-radio-group"]'
     );
-    expect(tierGroup.disabled).toBe(false);
+    expect(tierGroup).not.toBeNull();
+
+    const extrasGroup = element.shadowRoot.querySelector(
+      '[data-id="reputation-extras"]'
+    );
+    expect(extrasGroup).not.toBeNull();
+    expect(extrasGroup.options.map((option) => option.value)).toEqual([
+      "listingsManagement",
+      "localPages"
+    ]);
   });
 
-  it("pre-fills the Plan and Ratings & Reviews tier when a package is selected", async () => {
+  it("reveals the Ignite EX item checklist once toggled on, and a Pulse quantity input once Pulse is selected", async () => {
     const element = createTool();
     await flush();
 
-    const packageCombobox = element.shadowRoot.querySelector(
-      '[data-id="package-combobox"]'
+    const toggle = element.shadowRoot.querySelector(
+      '[data-id="ignite-ex-toggle"]'
     );
-    packageCombobox.dispatchEvent(
-      new CustomEvent("change", { detail: { value: "ignitePlus" } })
+    toggle.checked = true;
+    toggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const itemsGroup = element.shadowRoot.querySelector(
+      '[data-id="ignite-ex-items"]'
+    );
+    expect(itemsGroup).not.toBeNull();
+    expect(
+      element.shadowRoot.querySelector('[data-id="ignite-ex-pulse-quantity"]')
+    ).toBeNull();
+
+    itemsGroup.dispatchEvent(
+      new CustomEvent("change", { detail: { value: ["pulse"] } })
     );
     await flush();
 
-    const planCombobox = element.shadowRoot.querySelector(
-      '[data-id="plan-combobox"]'
+    const pulseInput = element.shadowRoot.querySelector(
+      '[data-id="ignite-ex-pulse-quantity"]'
     );
-    expect(planCombobox.value).toBe("Standard/Advanced");
+    expect(pulseInput).not.toBeNull();
 
-    const tierGroup = element.shadowRoot.querySelector(
-      '[data-id="rr-tier-radio-group"]'
+    pulseInput.value = 2;
+    pulseInput.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    // Pulse = $20,000 + $5,000 agile-analysis fee = $25,000 each, one-time.
+    expect(
+      element.shadowRoot.querySelector('[data-id="quoted-price-annual"]')
+    ).not.toBeNull();
+    const rows = element.shadowRoot.querySelectorAll(
+      ".slds-theme_shade table tbody tr"
     );
-    expect(tierGroup.disabled).toBe(false);
-    expect(tierGroup.value).toBe("pro");
-
-    const igniteCommunitiesToggle = element.shadowRoot.querySelector(
-      '[data-id="ignite-communities-toggle"]'
+    const pulseRow = Array.from(rows).find((row) =>
+      row.textContent.includes("Pulse")
     );
-    expect(igniteCommunitiesToggle.checked).toBe(true);
+    expect(pulseRow).not.toBeUndefined();
+    expect(pulseRow.textContent).toContain("(one-time)");
+    expect(
+      pulseRow.querySelector("lightning-formatted-number").value
+    ).toBe(50000);
+  });
 
-    const igniteExToggle = element.shadowRoot.querySelector(
-      '[data-id="ignite-ex-toggle"]'
-    );
-    expect(igniteExToggle.checked).toBe(false);
+  it("reveals Ignite Digital's extras checklist once toggled on", async () => {
+    const element = createTool();
+    await flush();
 
-    const igniteDigitalToggle = element.shadowRoot.querySelector(
+    expect(
+      element.shadowRoot.querySelector('[data-id="ignite-digital-extras"]')
+    ).toBeNull();
+
+    const toggle = element.shadowRoot.querySelector(
       '[data-id="ignite-digital-toggle"]'
     );
-    expect(igniteDigitalToggle.checked).toBe(true);
+    toggle.checked = true;
+    toggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const extrasGroup = element.shadowRoot.querySelector(
+      '[data-id="ignite-digital-extras"]'
+    );
+    expect(extrasGroup).not.toBeNull();
+    expect(extrasGroup.options.map((option) => option.value)).toEqual([
+      "mouseflowConfig",
+      "contactUs"
+    ]);
   });
 
-  it("pre-fills Ignite EX, Communities, and CX for the Enterprise package", async () => {
+  it("prices Mouseflow Config by its own tier and Contact Us (Inform) as a flat $30,000/year, each as its own line item", async () => {
     const element = createTool();
     await flush();
 
-    const packageCombobox = element.shadowRoot.querySelector(
-      '[data-id="package-combobox"]'
+    const toggle = element.shadowRoot.querySelector(
+      '[data-id="ignite-digital-toggle"]'
     );
-    packageCombobox.dispatchEvent(
-      new CustomEvent("change", { detail: { value: "igniteEnterprise" } })
+    toggle.checked = true;
+    toggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const extrasGroup = element.shadowRoot.querySelector(
+      '[data-id="ignite-digital-extras"]'
+    );
+    extrasGroup.dispatchEvent(
+      new CustomEvent("change", {
+        detail: { value: ["mouseflowConfig", "contactUs"] }
+      })
     );
     await flush();
 
-    const planCombobox = element.shadowRoot.querySelector(
-      '[data-id="plan-combobox"]'
+    const rows = element.shadowRoot.querySelectorAll(
+      ".slds-theme_shade table tbody tr"
     );
-    expect(planCombobox.value).toBe("Pro/Foundational");
+    const mouseflowRow = Array.from(rows).find((row) =>
+      row.textContent.includes("Mouseflow Config")
+    );
+    const contactUsRow = Array.from(rows).find((row) =>
+      row.textContent.includes("Contact Us")
+    );
+    // Essential is Mouseflow Config's default tier -> $45,000.
+    expect(
+      mouseflowRow.querySelector("lightning-formatted-number").value
+    ).toBe(45000);
+    expect(
+      contactUsRow.querySelector("lightning-formatted-number").value
+    ).toBe(30000);
+  });
 
-    const igniteExToggle = element.shadowRoot.querySelector(
-      '[data-id="ignite-ex-toggle"]'
-    );
-    expect(igniteExToggle.checked).toBe(true);
+  it("reveals the Mouseflow Config tier picker only once Mouseflow is selected, and re-prices independently of Service Tier", async () => {
+    const element = createTool();
+    await flush();
 
-    const igniteCommunitiesToggle = element.shadowRoot.querySelector(
-      '[data-id="ignite-communities-toggle"]'
+    const toggle = element.shadowRoot.querySelector(
+      '[data-id="ignite-digital-toggle"]'
     );
-    expect(igniteCommunitiesToggle.checked).toBe(true);
+    toggle.checked = true;
+    toggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
 
-    const igniteCxToggle = element.shadowRoot.querySelector(
-      '[data-id="ignite-cx-toggle"]'
+    expect(
+      element.shadowRoot.querySelector('[data-id="mouseflow-tier-radio-group"]')
+    ).toBeNull();
+
+    const extrasGroup = element.shadowRoot.querySelector(
+      '[data-id="ignite-digital-extras"]'
     );
-    expect(igniteCxToggle.checked).toBe(true);
+    extrasGroup.dispatchEvent(
+      new CustomEvent("change", { detail: { value: ["mouseflowConfig"] } })
+    );
+    await flush();
+
+    const tierGroup = element.shadowRoot.querySelector(
+      '[data-id="mouseflow-tier-radio-group"]'
+    );
+    expect(tierGroup).not.toBeNull();
+    expect(tierGroup.value).toBe("Essential");
+    expect(tierGroup.options.map((option) => option.value)).toEqual([
+      "Essential",
+      "Advanced",
+      "Elite"
+    ]);
+
+    // Switching the quote's Service Tier must NOT affect Mouseflow's price.
+    const serviceTierCombobox = element.shadowRoot.querySelector(
+      '[data-id="service-tier-combobox"]'
+    );
+    serviceTierCombobox.dispatchEvent(
+      new CustomEvent("change", { detail: { value: "Elite" } })
+    );
+    await flush();
+
+    let mouseflowRow = Array.from(
+      element.shadowRoot.querySelectorAll(".slds-theme_shade table tbody tr")
+    ).find((row) => row.textContent.includes("Mouseflow Config"));
+    expect(
+      mouseflowRow.querySelector("lightning-formatted-number").value
+    ).toBe(45000);
+
+    // Switching Mouseflow's own tier does re-price it.
+    tierGroup.dispatchEvent(
+      new CustomEvent("change", { detail: { value: "Elite" } })
+    );
+    await flush();
+
+    mouseflowRow = Array.from(
+      element.shadowRoot.querySelectorAll(".slds-theme_shade table tbody tr")
+    ).find((row) => row.textContent.includes("Mouseflow Config"));
+    expect(
+      mouseflowRow.querySelector("lightning-formatted-number").value
+    ).toBe(110000);
+  });
+
+  it("reveals the Add'l Surveys type checklist only once a quantity is entered", async () => {
+    const element = createTool();
+    await flush();
+
+    expect(
+      element.shadowRoot.querySelector('[data-id="additional-survey-types"]')
+    ).toBeNull();
+
+    const qtyInput = element.shadowRoot.querySelector(
+      '[data-field="additionalSurveys"]'
+    );
+    qtyInput.value = 3;
+    qtyInput.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const typesGroup = element.shadowRoot.querySelector(
+      '[data-id="additional-survey-types"]'
+    );
+    expect(typesGroup).not.toBeNull();
+    expect(typesGroup.options.map((option) => option.value)).toEqual([
+      "postship",
+      "closeTheLoop",
+      "callCenterAgentTrack"
+    ]);
   });
 
   it("caps the modeled discount % at 10", async () => {
@@ -251,7 +419,17 @@ describe("c-pricing-tool", () => {
     expect(setupFeeToggle.label).toContain("13,000");
   });
 
-  it("allows manually toggling Ignite EX, Case Management, and the setup fee", async () => {
+  it("labels the Case Management add-on as Case Premium", async () => {
+    const element = createTool();
+    await flush();
+
+    const toggle = element.shadowRoot.querySelector(
+      '[data-id="case-management-toggle"]'
+    );
+    expect(toggle.label).toContain("Case Premium");
+  });
+
+  it("allows manually toggling Ignite EX, Case Premium, and the setup fee", async () => {
     const element = createTool();
     await flush();
 
@@ -279,37 +457,7 @@ describe("c-pricing-tool", () => {
     expect(setupFeeToggle.checked).toBe(true);
   });
 
-  it("does not require locations for a custom quote with only Ignite EX toggled on", async () => {
-    const element = createTool();
-    element.recordId = "006000000000001AAA";
-    await flush();
-
-    const includeBaseToggle = element.shadowRoot.querySelector(
-      '[data-id="include-base-subscription-toggle"]'
-    );
-    includeBaseToggle.checked = false;
-    includeBaseToggle.dispatchEvent(new CustomEvent("change"));
-
-    const locationsInput = element.shadowRoot.querySelector(
-      '[data-id="locations-input"]'
-    );
-    locationsInput.value = 0;
-    locationsInput.dispatchEvent(new CustomEvent("change"));
-
-    const igniteExToggle = element.shadowRoot.querySelector(
-      '[data-id="ignite-ex-toggle"]'
-    );
-    igniteExToggle.checked = true;
-    igniteExToggle.dispatchEvent(new CustomEvent("change"));
-    await flush();
-
-    const addButton = element.shadowRoot.querySelector(
-      '[data-id="add-products-button"]'
-    );
-    expect(addButton.disabled).toBe(false);
-  });
-
-  it("does not require locations for a custom quote with only the setup fee toggled on", async () => {
+  it("requires locations before Add Products to Opportunity is enabled, since the base package is always part of the quote", async () => {
     const element = createTool();
     element.recordId = "006000000000001AAA";
     await flush();
@@ -321,66 +469,25 @@ describe("c-pricing-tool", () => {
     setupFeeToggle.dispatchEvent(new CustomEvent("change"));
     await flush();
 
-    const addButton = element.shadowRoot.querySelector(
+    let addButton = element.shadowRoot.querySelector(
+      '[data-id="add-products-button"]'
+    );
+    expect(addButton.disabled).toBe(true);
+
+    const locationsInput = element.shadowRoot.querySelector(
+      '[data-id="locations-input"]'
+    );
+    locationsInput.value = 500;
+    locationsInput.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    addButton = element.shadowRoot.querySelector(
       '[data-id="add-products-button"]'
     );
     expect(addButton.disabled).toBe(false);
   });
 
-  it("defaults to a custom quote with the base subscription off, and turns it back on when a package is chosen", async () => {
-    const element = createTool();
-    await flush();
-
-    const includeBaseToggle = element.shadowRoot.querySelector(
-      '[data-id="include-base-subscription-toggle"]'
-    );
-    expect(includeBaseToggle.checked).toBe(false);
-
-    const packageCombobox = element.shadowRoot.querySelector(
-      '[data-id="package-combobox"]'
-    );
-    packageCombobox.dispatchEvent(
-      new CustomEvent("change", { detail: { value: "ignitePlus" } })
-    );
-    await flush();
-
-    expect(includeBaseToggle.checked).toBe(true);
-  });
-
-  it("requires locations when Ignite CX is enabled, even in a custom quote", async () => {
-    const element = createTool();
-    element.recordId = "006000000000001AAA";
-    await flush();
-
-    const includeBaseToggle = element.shadowRoot.querySelector(
-      '[data-id="include-base-subscription-toggle"]'
-    );
-    includeBaseToggle.checked = false;
-    includeBaseToggle.dispatchEvent(new CustomEvent("change"));
-
-    const locationsInput = element.shadowRoot.querySelector(
-      '[data-id="locations-input"]'
-    );
-    locationsInput.value = 0;
-    locationsInput.dispatchEvent(new CustomEvent("change"));
-
-    const igniteCxToggle = element.shadowRoot.querySelector(
-      '[data-id="ignite-cx-toggle"]'
-    );
-    igniteCxToggle.checked = true;
-    igniteCxToggle.dispatchEvent(new CustomEvent("change"));
-    await flush();
-
-    const addButton = element.shadowRoot.querySelector(
-      '[data-id="add-products-button"]'
-    );
-    expect(addButton.disabled).toBe(true);
-
-    const banner = element.shadowRoot.querySelector(".slds-notify_alert");
-    expect(banner.textContent).toContain("Ignite CX");
-  });
-
-  it("prices a standalone Ignite CX quote off the selected Plan's rate card, and re-prices it when the Plan changes", async () => {
+  it("prices the base package off the selected Service Tier's rate card, and re-prices it when the tier changes", async () => {
     const element = createTool();
     await flush();
 
@@ -389,144 +496,38 @@ describe("c-pricing-tool", () => {
     );
     locationsInput.value = 500;
     locationsInput.dispatchEvent(new CustomEvent("change"));
-
-    const igniteCxToggle = element.shadowRoot.querySelector(
-      '[data-id="ignite-cx-toggle"]'
-    );
-    igniteCxToggle.checked = true;
-    igniteCxToggle.dispatchEvent(new CustomEvent("change"));
     await flush();
 
-    const proAdvancedAnnual = computeBaseQuote(
-      "Pro/Advanced",
+    const foundationalAnnual = computeBaseQuote(
+      "Foundational",
       500,
       "36"
     ).totalAnnual;
-    const proAdvancedMonthly = Math.round(proAdvancedAnnual / 12);
-    const proAdvancedPerLocation = round2(proAdvancedMonthly / 500);
+    const foundationalMonthly = Math.round(foundationalAnnual / 12);
+    const foundationalPerLocation = round2(foundationalMonthly / 500);
 
     let perLocationEl = element.shadowRoot.querySelector(
       '[data-id="quoted-price-per-location"]'
     );
-    expect(perLocationEl).not.toBeNull();
-    expect(perLocationEl.value).toBe(proAdvancedPerLocation);
+    expect(perLocationEl.value).toBe(foundationalPerLocation);
 
-    const planCombobox = element.shadowRoot.querySelector(
-      '[data-id="plan-combobox"]'
+    const serviceTierCombobox = element.shadowRoot.querySelector(
+      '[data-id="service-tier-combobox"]'
     );
-    planCombobox.dispatchEvent(
-      new CustomEvent("change", { detail: { value: "Standard/Foundational" } })
+    serviceTierCombobox.dispatchEvent(
+      new CustomEvent("change", { detail: { value: "Advanced" } })
     );
     await flush();
 
-    const standardFoundationalAnnual = computeBaseQuote(
-      "Standard/Foundational",
-      500,
-      "36"
-    ).totalAnnual;
-    const standardFoundationalMonthly = Math.round(
-      standardFoundationalAnnual / 12
-    );
-    const standardFoundationalPerLocation = round2(
-      standardFoundationalMonthly / 500
-    );
+    const advancedAnnual = computeBaseQuote("Advanced", 500, "36").totalAnnual;
+    const advancedMonthly = Math.round(advancedAnnual / 12);
+    const advancedPerLocation = round2(advancedMonthly / 500);
 
     perLocationEl = element.shadowRoot.querySelector(
       '[data-id="quoted-price-per-location"]'
     );
-    expect(perLocationEl.value).toBe(standardFoundationalPerLocation);
-    expect(standardFoundationalPerLocation).not.toBe(proAdvancedPerLocation);
-  });
-
-  it("defaults to Ignite CX only when a Standard plan is selected, clearing Ratings & Reviews and Ignite Digital", async () => {
-    const element = createTool();
-    await flush();
-
-    const rrToggle = element.shadowRoot.querySelector('[data-id="rr-toggle"]');
-    rrToggle.checked = true;
-    rrToggle.dispatchEvent(new CustomEvent("change"));
-
-    const igniteDigitalToggle = element.shadowRoot.querySelector(
-      '[data-id="ignite-digital-toggle"]'
-    );
-    igniteDigitalToggle.checked = true;
-    igniteDigitalToggle.dispatchEvent(new CustomEvent("change"));
-    await flush();
-
-    const planCombobox = element.shadowRoot.querySelector(
-      '[data-id="plan-combobox"]'
-    );
-    planCombobox.dispatchEvent(
-      new CustomEvent("change", { detail: { value: "Standard/Advanced" } })
-    );
-    await flush();
-
-    const igniteCxToggle = element.shadowRoot.querySelector(
-      '[data-id="ignite-cx-toggle"]'
-    );
-    expect(igniteCxToggle.checked).toBe(true);
-    expect(
-      element.shadowRoot.querySelector('[data-id="rr-toggle"]').checked
-    ).toBe(false);
-    expect(
-      element.shadowRoot.querySelector('[data-id="ignite-digital-toggle"]')
-        .checked
-    ).toBe(false);
-  });
-
-  it("defaults to Ignite CX + Ratings & Reviews + Ignite Digital when a Pro plan is selected", async () => {
-    const element = createTool();
-    await flush();
-
-    const planCombobox = element.shadowRoot.querySelector(
-      '[data-id="plan-combobox"]'
-    );
-    planCombobox.dispatchEvent(
-      new CustomEvent("change", { detail: { value: "Pro/Foundational" } })
-    );
-    await flush();
-
-    expect(
-      element.shadowRoot.querySelector('[data-id="ignite-cx-toggle"]').checked
-    ).toBe(true);
-    expect(
-      element.shadowRoot.querySelector('[data-id="rr-toggle"]').checked
-    ).toBe(true);
-    expect(
-      element.shadowRoot.querySelector('[data-id="ignite-digital-toggle"]')
-        .checked
-    ).toBe(true);
-  });
-
-  it("leaves the CX / Ratings & Reviews / Ignite Digital toggles untouched when Solution Support Only is selected", async () => {
-    const element = createTool();
-    await flush();
-
-    const igniteDigitalToggle = element.shadowRoot.querySelector(
-      '[data-id="ignite-digital-toggle"]'
-    );
-    igniteDigitalToggle.checked = true;
-    igniteDigitalToggle.dispatchEvent(new CustomEvent("change"));
-    await flush();
-
-    const planCombobox = element.shadowRoot.querySelector(
-      '[data-id="plan-combobox"]'
-    );
-    planCombobox.dispatchEvent(
-      new CustomEvent("change", { detail: { value: "Solution Support Only" } })
-    );
-    await flush();
-
-    expect(
-      element.shadowRoot.querySelector('[data-id="ignite-cx-toggle"]').checked
-    ).toBe(false);
-    expect(
-      element.shadowRoot.querySelector('[data-id="rr-toggle"]').checked
-    ).toBe(false);
-    expect(
-      element.shadowRoot.querySelector('[data-id="ignite-digital-toggle"]')
-        .checked
-    ).toBe(true);
+    expect(perLocationEl.value).toBe(advancedPerLocation);
+    expect(advancedPerLocation).not.toBe(foundationalPerLocation);
   });
 
   it("shows the Ignite Communities calculator only when the toggle is on, defaulting to the DIY tier", async () => {
@@ -626,32 +627,19 @@ describe("c-pricing-tool", () => {
     expect(adminInput.disabled).toBe(true);
   });
 
-  it("shows the base package line once the base subscription is switched on", async () => {
+  it("always shows the base package line in the Quote Summary, even with nothing else toggled on", async () => {
     const element = createTool();
-    await flush();
-
-    const includeBaseToggle = element.shadowRoot.querySelector(
-      '[data-id="include-base-subscription-toggle"]'
-    );
-    includeBaseToggle.checked = true;
-    includeBaseToggle.dispatchEvent(new CustomEvent("change"));
     await flush();
 
     const rows = element.shadowRoot.querySelectorAll(
       ".slds-theme_shade table tbody tr"
     );
     expect(rows.length).toBe(1);
+    expect(rows[0].textContent).toContain("Ignite Platform");
   });
 
   it("adds a row to the quote summary for each additional toggled product", async () => {
     const element = createTool();
-    await flush();
-
-    const igniteExToggle = element.shadowRoot.querySelector(
-      '[data-id="ignite-ex-toggle"]'
-    );
-    igniteExToggle.checked = true;
-    igniteExToggle.dispatchEvent(new CustomEvent("change"));
     await flush();
 
     let rows = element.shadowRoot.querySelectorAll(
@@ -659,11 +647,11 @@ describe("c-pricing-tool", () => {
     );
     expect(rows.length).toBe(1);
 
-    const includeBaseToggle = element.shadowRoot.querySelector(
-      '[data-id="include-base-subscription-toggle"]'
+    const caseManagementToggle = element.shadowRoot.querySelector(
+      '[data-id="case-management-toggle"]'
     );
-    includeBaseToggle.checked = true;
-    includeBaseToggle.dispatchEvent(new CustomEvent("change"));
+    caseManagementToggle.checked = true;
+    caseManagementToggle.dispatchEvent(new CustomEvent("change"));
     await flush();
 
     rows = element.shadowRoot.querySelectorAll(
@@ -672,46 +660,13 @@ describe("c-pricing-tool", () => {
     expect(rows.length).toBe(2);
   });
 
-  it("automatically includes Ignite CX (locking the toggle) once a base subscription is added, since the Plan is the same product as Ignite CX", async () => {
+  it("adds no line item for Ignite Digital by itself - only its selected components are priced", async () => {
     const element = createTool();
     await flush();
 
-    const includeBaseToggle = element.shadowRoot.querySelector(
-      '[data-id="include-base-subscription-toggle"]'
-    );
-    includeBaseToggle.checked = true;
-    includeBaseToggle.dispatchEvent(new CustomEvent("change"));
-    await flush();
-
-    const igniteCxToggle = element.shadowRoot.querySelector(
-      '[data-id="ignite-cx-toggle"]'
-    );
-    expect(igniteCxToggle.checked).toBe(true);
-    expect(igniteCxToggle.disabled).toBe(true);
-
-    let rows = element.shadowRoot.querySelectorAll(
+    const rowsBefore = element.shadowRoot.querySelectorAll(
       ".slds-theme_shade table tbody tr"
-    );
-    expect(rows.length).toBe(1);
-    expect(rows[0].textContent).toContain("Pro/Advanced");
-    expect(rows[0].textContent).toContain("(includes Ignite CX)");
-
-    includeBaseToggle.checked = false;
-    includeBaseToggle.dispatchEvent(new CustomEvent("change"));
-    await flush();
-
-    expect(igniteCxToggle.disabled).toBe(false);
-
-    rows = element.shadowRoot.querySelectorAll(
-      ".slds-theme_shade table tbody tr"
-    );
-    expect(rows.length).toBe(1);
-    expect(rows[0].textContent).toContain("Ignite CX");
-  });
-
-  it("prices Ignite Digital as a flat $40,000/year line item", async () => {
-    const element = createTool();
-    await flush();
+    ).length;
 
     const igniteDigitalToggle = element.shadowRoot.querySelector(
       '[data-id="ignite-digital-toggle"]'
@@ -720,24 +675,15 @@ describe("c-pricing-tool", () => {
     igniteDigitalToggle.dispatchEvent(new CustomEvent("change"));
     await flush();
 
-    const row = element.shadowRoot.querySelector(
+    const rowsAfter = element.shadowRoot.querySelectorAll(
       ".slds-theme_shade table tbody tr"
-    );
-    expect(row.textContent).toContain("Ignite Digital");
-    expect(
-      row.querySelector("lightning-formatted-number").value
-    ).toBe(40000);
+    ).length;
+    expect(rowsAfter).toBe(rowsBefore);
   });
 
-  it("rolls Ratings & Reviews, Ignite Communities, and Ignite Digital into the Quoted Price section's totals, not just the base package", async () => {
+  it("rolls Reputation Management, Ignite Communities, and Ignite Digital into the Quoted Price section's totals, not just the base package", async () => {
     const element = createTool();
     await flush();
-
-    const includeBaseToggle = element.shadowRoot.querySelector(
-      '[data-id="include-base-subscription-toggle"]'
-    );
-    includeBaseToggle.checked = true;
-    includeBaseToggle.dispatchEvent(new CustomEvent("change"));
 
     const locationsInput = element.shadowRoot.querySelector(
       '[data-id="locations-input"]'
@@ -763,7 +709,15 @@ describe("c-pricing-tool", () => {
     igniteDigitalToggle.dispatchEvent(new CustomEvent("change"));
     await flush();
 
-    const baseAnnual = computeBaseQuote("Pro/Advanced", 500, "36").totalAnnual;
+    const igniteDigitalExtras = element.shadowRoot.querySelector(
+      '[data-id="ignite-digital-extras"]'
+    );
+    igniteDigitalExtras.dispatchEvent(
+      new CustomEvent("change", { detail: { value: ["mouseflowConfig"] } })
+    );
+    await flush();
+
+    const baseAnnual = computeBaseQuote("Foundational", 500, "36").totalAnnual;
     const rrAnnual = computeRatingsReviews("pro", 500).annual;
     const communityAnnual = computeCommunityQuote({
       tier: "DIY",
@@ -773,8 +727,10 @@ describe("c-pricing-tool", () => {
       additionalConsultancyProjects: 0,
       additionalAdminUsers: 0
     }).totalAnnual;
+    // Mouseflow Config defaults to its own Essential tier -> $45,000.
+    const igniteDigitalAnnual = 45000;
     const expectedAnnual = round2(
-      baseAnnual + rrAnnual + communityAnnual + IGNITE_DIGITAL_FLAT_FEE
+      baseAnnual + rrAnnual + communityAnnual + igniteDigitalAnnual
     );
     const expectedMonthly = Math.round(expectedAnnual / 12);
     const expectedPerLocation = round2(expectedMonthly / 500);
@@ -794,27 +750,44 @@ describe("c-pricing-tool", () => {
     ).toBe(expectedPerLocation);
   });
 
-  it("shows 'No products selected yet' when nothing is toggled on in a custom quote", async () => {
+  it("pre-fills Service Tier, locations, and AgentTrack from the Opportunity's existing products", async () => {
     const element = createTool();
+    element.recordId = "006000000000001AAA";
     await flush();
 
-    const includeBaseToggle = element.shadowRoot.querySelector(
-      '[data-id="include-base-subscription-toggle"]'
-    );
-    includeBaseToggle.checked = false;
-    includeBaseToggle.dispatchEvent(new CustomEvent("change"));
+    getExistingLineItems.emit([
+      {
+        productCode: "BASE-STD-ADV",
+        quantity: 1,
+        unitPrice: 330480,
+        description: "Ignite Platform (Advanced) — 1000 locations"
+      },
+      {
+        productCode: "AGENTTRACK-WEB",
+        quantity: 1,
+        unitPrice: 25000,
+        description: "AgentTrack (Agent Experience) — 60-100 agents"
+      }
+    ]);
     await flush();
 
-    const table = element.shadowRoot.querySelector(
-      ".slds-theme_shade table"
+    const locationsInput = element.shadowRoot.querySelector(
+      '[data-id="locations-input"]'
     );
-    expect(table).toBeNull();
-    expect(
-      element.shadowRoot.querySelector(".slds-theme_shade").textContent
-    ).toContain("No products selected yet");
+    expect(locationsInput.value).toBe(1000);
+
+    const serviceTierCombobox = element.shadowRoot.querySelector(
+      '[data-id="service-tier-combobox"]'
+    );
+    expect(serviceTierCombobox.value).toBe("Advanced");
+
+    const bandCombobox = element.shadowRoot.querySelector(
+      '[data-id="agent-count-band-combobox"]'
+    );
+    expect(bandCombobox.value).toBe("60-100");
   });
 
-  it("pre-fills Plan, locations, and AgentTrack from the Opportunity's existing products", async () => {
+  it("recovers the Advanced/Foundational tier from a legacy pre-rework Pro/Standard product code", async () => {
     const element = createTool();
     element.recordId = "006000000000001AAA";
     await flush();
@@ -825,66 +798,14 @@ describe("c-pricing-tool", () => {
         quantity: 1,
         unitPrice: 330480,
         description: "Pro/Advanced — 1000 locations"
-      },
-      {
-        productCode: "AGENTTRACK-WEB",
-        quantity: 1,
-        unitPrice: 25000,
-        description: "AgentTrack (Web Only) — 5 agents"
       }
     ]);
     await flush();
 
-    const locationsInput = element.shadowRoot.querySelector(
-      '[data-id="locations-input"]'
+    const serviceTierCombobox = element.shadowRoot.querySelector(
+      '[data-id="service-tier-combobox"]'
     );
-    expect(locationsInput.value).toBe(1000);
-
-    const planCombobox = element.shadowRoot.querySelector(
-      '[data-id="plan-combobox"]'
-    );
-    expect(planCombobox.value).toBe("Pro/Advanced");
-
-    const includeBaseToggle = element.shadowRoot.querySelector(
-      '[data-id="include-base-subscription-toggle"]'
-    );
-    expect(includeBaseToggle.checked).toBe(true);
-
-    const agentVariantCombobox = element.shadowRoot.querySelector(
-      '[data-id="agent-track-variant"]'
-    );
-    expect(agentVariantCombobox.value).toBe("web");
-
-    const agentCountInput = element.shadowRoot.querySelector(
-      '[data-id="agent-count-input"]'
-    );
-    expect(agentCountInput.value).toBe(5);
-  });
-
-  it("pre-fills the Ignite CX toggle from the '(includes Ignite CX)' marker on the base package line, since there's no separate line item for it anymore", async () => {
-    const element = createTool();
-    element.recordId = "006000000000001AAA";
-    await flush();
-
-    getExistingLineItems.emit([
-      {
-        productCode: "BASE-PRO-ADV",
-        quantity: 1,
-        unitPrice: 330480,
-        description: "Pro/Advanced — 1000 locations (includes Ignite CX)"
-      }
-    ]);
-    await flush();
-
-    const igniteCxToggle = element.shadowRoot.querySelector(
-      '[data-id="ignite-cx-toggle"]'
-    );
-    expect(igniteCxToggle.checked).toBe(true);
-
-    const locationsInput = element.shadowRoot.querySelector(
-      '[data-id="locations-input"]'
-    );
-    expect(locationsInput.value).toBe(1000);
+    expect(serviceTierCombobox.value).toBe("Advanced");
   });
 
   it("pre-fills Ignite Communities' tier, markets, and size from the existing line item", async () => {
@@ -926,15 +847,10 @@ describe("c-pricing-tool", () => {
     getExistingLineItems.emit([]);
     await flush();
 
-    const planCombobox = element.shadowRoot.querySelector(
-      '[data-id="plan-combobox"]'
+    const serviceTierCombobox = element.shadowRoot.querySelector(
+      '[data-id="service-tier-combobox"]'
     );
-    expect(planCombobox.value).toBe("Pro/Advanced");
-
-    const includeBaseToggle = element.shadowRoot.querySelector(
-      '[data-id="include-base-subscription-toggle"]'
-    );
-    expect(includeBaseToggle.checked).toBe(false);
+    expect(serviceTierCombobox.value).toBe("Foundational");
   });
 
   it("pre-fills Term, modeled discount, and locations from the Opportunity's stored fields", async () => {
