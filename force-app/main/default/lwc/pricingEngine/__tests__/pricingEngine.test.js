@@ -15,8 +15,6 @@ import {
   AGENT_COUNT_BANDS
 } from "c/pricingEngine";
 
-const RATE_CARD_TIERS = SERVICE_TIERS.filter((tier) => tier !== "Elite");
-
 describe("computeBaseQuote", () => {
   it("matches the REVISED Pricing Table's Advanced tier $/location/month band rates", () => {
     expect(computeBaseQuote("Advanced", 125, 36).listRatePerLocationPerMonth).toBe(72);
@@ -31,17 +29,29 @@ describe("computeBaseQuote", () => {
     expect(computeBaseQuote("Advanced", 6000, 36).listRatePerLocationPerMonth).toBe(15.84);
   });
 
+  it("matches Elite's recommended $/location/month band rates (2026-08-17)", () => {
+    expect(computeBaseQuote("Elite", 125, 36).listRatePerLocationPerMonth).toBe(92);
+    expect(computeBaseQuote("Elite", 225, 36).listRatePerLocationPerMonth).toBe(67);
+    expect(computeBaseQuote("Elite", 450, 36).listRatePerLocationPerMonth).toBe(32);
+    expect(computeBaseQuote("Elite", 900, 36).listRatePerLocationPerMonth).toBe(30);
+    expect(computeBaseQuote("Elite", 1800, 36).listRatePerLocationPerMonth).toBe(27);
+    expect(computeBaseQuote("Elite", 3500, 36).listRatePerLocationPerMonth).toBe(23.5);
+    expect(computeBaseQuote("Elite", 6000, 36).listRatePerLocationPerMonth).toBe(20.25);
+  });
+
   it("matches the REVISED Pricing Table's per-tier rates in the 151-300 band", () => {
     expect(computeBaseQuote("Advanced", 225, 36).listRatePerLocationPerMonth).toBe(52.2);
     expect(computeBaseQuote("Foundational", 225, 36).listRatePerLocationPerMonth).toBe(43.5);
+    expect(computeBaseQuote("Elite", 225, 36).listRatePerLocationPerMonth).toBe(67);
   });
 
   it("prices the 1-100 location band as a flat annual fee, not a $/location/month rate", () => {
     const flatFeesByTier = {
       Advanced: 120000,
-      Foundational: 60000
+      Foundational: 60000,
+      Elite: 155000
     };
-    for (const tier of RATE_CARD_TIERS) {
+    for (const tier of SERVICE_TIERS) {
       expect(computeBaseQuote(tier, 50, 36).totalAnnual).toBe(flatFeesByTier[tier]);
       expect(computeBaseQuote(tier, 100, 36).totalAnnual).toBe(flatFeesByTier[tier]);
     }
@@ -54,18 +64,25 @@ describe("computeBaseQuote", () => {
     expect(result.totalAnnual).toBe(773220);
   });
 
+  it("matches the 2,501-5,000 band exactly for Elite at 3,500 locations", () => {
+    const result = computeBaseQuote("Elite", 3500, 36);
+    expect(result.totalAnnual).toBe(987000);
+  });
+
   it("flags locations above 5,000 as custom pricing", () => {
     expect(computeBaseQuote("Advanced", 3500, 36).isCustomPricing).toBe(false);
     expect(computeBaseQuote("Advanced", 5001, 36).isCustomPricing).toBe(true);
+    expect(computeBaseQuote("Elite", 5001, 36).isCustomPricing).toBe(true);
   });
 
   it("defines the annual minimum floors by service tier", () => {
     expect(ANNUAL_MINIMUM_FLOOR.advanced).toBe(80000);
     expect(ANNUAL_MINIMUM_FLOOR.foundational).toBe(60000);
+    expect(ANNUAL_MINIMUM_FLOOR.elite).toBe(155000);
   });
 
   it("never needs to apply the annual minimum floor under the new rate card - every tier's flat 1-100 fee already clears its own floor", () => {
-    for (const tier of RATE_CARD_TIERS) {
+    for (const tier of SERVICE_TIERS) {
       expect(computeBaseQuote(tier, 50, 36).floorApplied).toBe(false);
     }
   });
@@ -74,6 +91,20 @@ describe("computeBaseQuote", () => {
     const result = computeBaseQuote("Advanced", 900, 36);
     expect(result.floorApplied).toBe(false);
     expect(result.totalAnnual).toBe(251100);
+  });
+
+  it("applies Elite's $155,000 floor at the low end of the 101-150 band, where the $/location rate alone falls short", () => {
+    // 92/loc/mo x 101 locations x 12 = $111,504 raw - below the $155,000 floor.
+    const result = computeBaseQuote("Elite", 101, 36);
+    expect(result.floorApplied).toBe(true);
+    expect(result.totalAnnual).toBe(155000);
+  });
+
+  it("no longer needs Elite's floor once the $/location rate clears it within the same band", () => {
+    // 92/loc/mo x 150 locations x 12 = $165,600 raw - already above the $155,000 floor.
+    const result = computeBaseQuote("Elite", 150, 36);
+    expect(result.floorApplied).toBe(false);
+    expect(result.totalAnnual).toBe(165600);
   });
 
   it("applies the 24-month (+5%) and 12-month (+10%) term premiums", () => {
@@ -99,12 +130,6 @@ describe("computeBaseQuote", () => {
     expect(() => computeBaseQuote("Bogus", 100, 36)).toThrow();
   });
 
-  it("quotes Elite as a real $0 line flagged price-TBD, skipping the band lookup entirely", () => {
-    const result = computeBaseQuote("Elite", 900, 36);
-    expect(result.totalAnnual).toBe(0);
-    expect(result.isPriceTBD).toBe(true);
-    expect(result.isCustomPricing).toBe(false);
-  });
 });
 
 describe("LOCATION_BANDS", () => {
@@ -116,12 +141,12 @@ describe("LOCATION_BANDS", () => {
     expect(LOCATION_BANDS[LOCATION_BANDS.length - 1].max).toBe(Infinity);
   });
 
-  it("gives every rate-card tier a rate (flat fee or $/location/month) in every band", () => {
+  it("gives every service tier a rate (flat fee or $/location/month) in every band", () => {
     for (const band of LOCATION_BANDS) {
       const rateMap = band.isFlatFee
         ? band.flatAnnualFeeByPlan
         : band.ratePerLocationPerMonthByPlan;
-      for (const tier of RATE_CARD_TIERS) {
+      for (const tier of SERVICE_TIERS) {
         expect(typeof rateMap[tier]).toBe("number");
       }
     }

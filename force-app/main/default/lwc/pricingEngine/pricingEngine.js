@@ -8,9 +8,9 @@
  *
  * Service Tier (Foundational/Advanced/Elite) replaces the prior 5-value Plan: Foundational
  * and Advanced reuse the former Standard/Foundational and Standard/Advanced rate columns
- * (the Pro/Standard distinction and the separate Solution-Support-Only plan were dropped);
- * Elite has no rate card yet and is quoted as a real $0 "price TBD" line, the same pattern
- * used for Ignite EX.
+ * (the Pro/Standard distinction and the separate Solution-Support-Only plan were dropped).
+ * Elite's rate card (recommended pricing, 2026-08-17) is a new tier, not reused from any
+ * prior plan.
  *
  * No LWC/Apex dependencies here by design - keep this file plain, importable,
  * and unit-testable in isolation.
@@ -18,18 +18,14 @@
 
 export const SERVICE_TIERS = ["Foundational", "Advanced", "Elite"];
 
-// Elite has no rate card yet - computeBaseQuote short-circuits it to a $0/"price TBD" quote
-// (same pattern as Ignite EX) instead of doing a band lookup, so it's excluded from every band
-// below rather than carrying a placeholder rate that would look real.
-export const ELITE_SERVICE_TIER = "Elite";
-
-// REVISED Pricing Table (RG, 2026-07-27), collapsed from 5 plans down to the 2 tiers that map
-// onto Foundational/Advanced (the former Standard/Foundational and Standard/Advanced columns -
-// the Pro/Standard distinction and the separate Solution-Support-Only plan were dropped when
-// Plan became the 3-value Service Tier). Each tier has its own explicit $/location/month rate
-// per band (not a flat multiplier off one anchor - the ratio between tiers isn't constant
-// across bands). The 1-100 band is a flat annual fee, not a $/location/month rate, per that
-// table's note ("Change 'up to 100 locations' to be a flat-rate, not $/loc./month").
+// REVISED Pricing Table (RG, 2026-07-27) for Foundational/Advanced (collapsed from 5 plans
+// down to the 2 tiers that map onto them - the former Standard/Foundational and
+// Standard/Advanced columns; the Pro/Standard distinction and the separate
+// Solution-Support-Only plan were dropped when Plan became the 3-value Service Tier), plus
+// Elite's recommended rate card (2026-08-17). Each tier has its own explicit $/location/month
+// rate per band (not a flat multiplier off one anchor - the ratio between tiers isn't
+// constant across bands). The 1-100 band is a flat annual fee, not a $/location/month rate,
+// per that table's note ("Change 'up to 100 locations' to be a flat-rate, not $/loc./month").
 export const LOCATION_BANDS = [
   {
     min: 1,
@@ -38,7 +34,8 @@ export const LOCATION_BANDS = [
     isFlatFee: true,
     flatAnnualFeeByPlan: {
       Advanced: 120000,
-      Foundational: 60000
+      Foundational: 60000,
+      Elite: 155000
     }
   },
   {
@@ -47,7 +44,8 @@ export const LOCATION_BANDS = [
     label: "101 - 150",
     ratePerLocationPerMonthByPlan: {
       Advanced: 72,
-      Foundational: 60
+      Foundational: 60,
+      Elite: 92
     }
   },
   {
@@ -56,7 +54,8 @@ export const LOCATION_BANDS = [
     label: "151 - 300",
     ratePerLocationPerMonthByPlan: {
       Advanced: 52.2,
-      Foundational: 43.5
+      Foundational: 43.5,
+      Elite: 67
     }
   },
   {
@@ -65,7 +64,8 @@ export const LOCATION_BANDS = [
     label: "301 - 600",
     ratePerLocationPerMonthByPlan: {
       Advanced: 25,
-      Foundational: 20
+      Foundational: 20,
+      Elite: 32
     }
   },
   {
@@ -74,7 +74,8 @@ export const LOCATION_BANDS = [
     label: "601 - 1,200",
     ratePerLocationPerMonthByPlan: {
       Advanced: 23.25,
-      Foundational: 18.6
+      Foundational: 18.6,
+      Elite: 30
     }
   },
   {
@@ -83,7 +84,8 @@ export const LOCATION_BANDS = [
     label: "1,201 - 2,500",
     ratePerLocationPerMonthByPlan: {
       Advanced: 20.925,
-      Foundational: 16.74
+      Foundational: 16.74,
+      Elite: 27
     }
   },
   {
@@ -92,7 +94,8 @@ export const LOCATION_BANDS = [
     label: "2,501 - 5,000",
     ratePerLocationPerMonthByPlan: {
       Advanced: 18.414,
-      Foundational: 14.7312
+      Foundational: 14.7312,
+      Elite: 23.5
     }
   },
   {
@@ -102,15 +105,19 @@ export const LOCATION_BANDS = [
     isCustom: true,
     ratePerLocationPerMonthByPlan: {
       Advanced: 15.83604,
-      Foundational: 12.668832
+      Foundational: 12.668832,
+      Elite: 20.25
     }
   }
 ];
 
-// Rate Card sheet, row 16 - annual minimum floors by service tier.
+// Rate Card sheet, row 16 - annual minimum floors by service tier. Elite's floor equals its
+// own flat 1-100 fee, so unlike Foundational/Advanced (where the floor rarely binds) it does
+// bind for real at the low end of the 101-150 band, before the $/location rate alone clears it.
 export const ANNUAL_MINIMUM_FLOOR = {
   advanced: 80000,
-  foundational: 60000
+  foundational: 60000,
+  elite: 155000
 };
 
 // Rate Card sheet, row 17 - $5,000 base + $10/committed location, capped at $40,000.
@@ -507,9 +514,13 @@ function getTermPremium(termMonths) {
 }
 
 function getAnnualFloor(tier) {
-  return tier === "Foundational"
-    ? ANNUAL_MINIMUM_FLOOR.foundational
-    : ANNUAL_MINIMUM_FLOOR.advanced;
+  if (tier === "Foundational") {
+    return ANNUAL_MINIMUM_FLOOR.foundational;
+  }
+  if (tier === "Elite") {
+    return ANNUAL_MINIMUM_FLOOR.elite;
+  }
+  return ANNUAL_MINIMUM_FLOOR.advanced;
 }
 
 /**
@@ -518,31 +529,12 @@ function getAnnualFloor(tier) {
  * above 5,000 use the top ("custom") band rate but are flagged via isCustomPricing so the
  * UI can prompt for deal-desk review rather than silently auto-quoting. Locations 1-100 use
  * that band's flat annual fee instead of a $/location/month rate.
- *
- * Elite has no rate card yet - it's quoted the same way Ignite EX is, as a real $0 line
- * flagged "price TBD" via isPriceTBD, rather than a band lookup.
  */
 export function computeBaseQuote(tier, locations, termMonths) {
   if (!SERVICE_TIERS.includes(tier)) {
     throw new Error(`Unknown service tier: ${tier}`);
   }
   const safeLocations = Math.max(1, Number(locations) || 1);
-
-  if (tier === ELITE_SERVICE_TIER) {
-    return {
-      tier,
-      locations: safeLocations,
-      bandLabel: null,
-      isCustomPricing: false,
-      isPriceTBD: true,
-      listRatePerLocationPerMonth: 0,
-      pricePerLocationPerMonth: 0,
-      totalMonthly: 0,
-      totalAnnual: 0,
-      floorApplied: false
-    };
-  }
-
   const band = findLocationBand(safeLocations);
   const termPremium = getTermPremium(termMonths);
 
@@ -568,7 +560,6 @@ export function computeBaseQuote(tier, locations, termMonths) {
     locations: safeLocations,
     bandLabel: band.label,
     isCustomPricing: Boolean(band.isCustom),
-    isPriceTBD: false,
     listRatePerLocationPerMonth,
     pricePerLocationPerMonth,
     totalMonthly: round2(totalAnnual / 12),

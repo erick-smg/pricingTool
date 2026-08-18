@@ -34,6 +34,7 @@ import {
   computeIgniteDigitalExtras,
   getDiscountGuidance
 } from "c/pricingEngine";
+import { exportQuoteToPowerPoint } from "c/pptxExport";
 
 // "none" is never exposed in the UI (AgentTrack is a plain checkbox now) but is kept as the
 // internal off-value so computeCallCenter's existing variant contract doesn't need to change.
@@ -683,6 +684,12 @@ export default class PricingTool extends LightningElement {
     );
   }
 
+  // Exporting a slide doesn't touch the Opportunity, so unlike addProductsDisabled it needs
+  // neither a recordId nor synced-products gating - only that there's something to show.
+  get exportPowerPointDisabled() {
+    return this.lineItemRequests.length === 0;
+  }
+
   applyDiscount(annual) {
     return this.hasDiscount
       ? round2(annual * (1 - Number(this.discountPercent) / 100))
@@ -899,9 +906,7 @@ export default class PricingTool extends LightningElement {
       productCode: BASE_PACKAGE_PRODUCT_CODES[this.serviceTier],
       quantity: 1,
       unitPrice: this.applyDiscount(this.baseQuote.totalAnnual),
-      description: `Ignite Platform (${this.serviceTier}) — ${this.locations} locations${
-        this.baseQuote.isPriceTBD ? " (price TBD)" : ""
-      }`,
+      description: `Ignite Platform (${this.serviceTier}) — ${this.locations} locations`,
       isOneTime: false
     });
     lines.push(...this.buildAddOnLineItems(this.addOnsResult.lines));
@@ -1080,6 +1085,32 @@ export default class PricingTool extends LightningElement {
       Number.isFinite(value) && value >= 0
         ? Math.min(value, MAX_DISCOUNT_PERCENT)
         : 0;
+  }
+
+  handleExportPowerPoint() {
+    try {
+      exportQuoteToPowerPoint({
+        locations: this.locations,
+        serviceTier: this.serviceTier,
+        termLabel: this.termLengthLabel,
+        discountPercent: this.discountPercent,
+        lines: this.lineItemsForDisplay,
+        recurringTotal: this.recurringLineItemsTotal,
+        grandTotal: this.lineItemsGrandTotal,
+        fileName: `SMG Pricing Quote - ${this.locations} locations.pptx`
+      });
+    } catch (error) {
+      // A cross-realm error under Lightning Web Security can otherwise surface only as an
+      // unhelpful "Script error." in the browser console with no message - catching it here,
+      // inside the same module the throw happens in, still gives us the real Error object.
+      this.dispatchEvent(
+        new ShowToastEvent({
+          title: "Error exporting to PowerPoint",
+          message: error?.message || String(error),
+          variant: "error"
+        })
+      );
+    }
   }
 
   async handleAddProductsToOpportunity() {

@@ -588,15 +588,6 @@
                 desk before quoting.
               </div>
             </template>
-            <template if:true={baseQuote.isPriceTBD}>
-              <div
-                class="slds-notify slds-notify_alert slds-theme_alert-texture slds-theme_warning slds-m-bottom_small"
-                role="alert"
-              >
-                Elite has no rate card yet — the base package is priced at
-                $0 (TBD) until real rates are available.
-              </div>
-            </template>
             <template if:true={baseQuote.floorApplied}>
               <div class="slds-text-body_small slds-m-bottom_small">
                 Annual minimum applied — the calculated rate fell below the
@@ -885,13 +876,26 @@
               </p>
             </template>
           </div>
-          <lightning-button
-            data-id="add-products-button"
-            variant="brand"
-            label="Add Products to Opportunity"
-            disabled={addProductsDisabled}
-            onclick={handleAddProductsToOpportunity}
-          ></lightning-button>
+          <div class="slds-grid slds-gutters_x-small">
+            <div class="slds-col">
+              <lightning-button
+                data-id="export-pptx-button"
+                variant="neutral"
+                label="Export to PowerPoint"
+                disabled={exportPowerPointDisabled}
+                onclick={handleExportPowerPoint}
+              ></lightning-button>
+            </div>
+            <div class="slds-col">
+              <lightning-button
+                data-id="add-products-button"
+                variant="brand"
+                label="Add Products to Opportunity"
+                disabled={addProductsDisabled}
+                onclick={handleAddProductsToOpportunity}
+              ></lightning-button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -8,6 +8,11 @@ import {
   computeCommunityQuote,
   COMMUNITY_TIER_SPECS
 } from "c/pricingEngine";
+import { exportQuoteToPowerPoint } from "c/pptxExport";
+
+jest.mock("c/pptxExport", () => ({
+  exportQuoteToPowerPoint: jest.fn()
+}));
 
 function round2(value) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
@@ -85,7 +90,7 @@ describe("c-pricing-tool", () => {
     expect(banner.textContent).toContain("custom pricing");
   });
 
-  it("shows a price-TBD warning and quotes $0 when the Elite service tier is selected", async () => {
+  it("prices the Elite service tier off its own rate card (no more $0/TBD placeholder)", async () => {
     const element = createTool();
     await flush();
 
@@ -104,13 +109,10 @@ describe("c-pricing-tool", () => {
     );
     await flush();
 
-    const banner = element.shadowRoot.querySelector(".slds-notify_alert");
-    expect(banner.textContent).toContain("no rate card yet");
-
     expect(
       element.shadowRoot.querySelector('[data-id="quoted-price-annual"]')
         .value
-    ).toBe(0);
+    ).toBe(computeBaseQuote("Elite", 500, "36").totalAnnual);
   });
 
   it("applies the term premium when a shorter term is selected", async () => {
@@ -636,6 +638,28 @@ describe("c-pricing-tool", () => {
     );
     expect(rows.length).toBe(1);
     expect(rows[0].textContent).toContain("Ignite Platform");
+  });
+
+  it("enables Export to PowerPoint whenever there's at least one line item, and hands it the current quote", async () => {
+    const element = createTool();
+    await flush();
+
+    const exportButton = element.shadowRoot.querySelector(
+      '[data-id="export-pptx-button"]'
+    );
+    expect(exportButton.disabled).toBe(false);
+
+    exportButton.click();
+
+    expect(exportQuoteToPowerPoint).toHaveBeenCalledWith(
+      expect.objectContaining({
+        locations: 0,
+        serviceTier: "Foundational",
+        lines: expect.any(Array),
+        recurringTotal: expect.any(Number),
+        grandTotal: expect.any(Number)
+      })
+    );
   });
 
   it("adds a row to the quote summary for each additional toggled product", async () => {
