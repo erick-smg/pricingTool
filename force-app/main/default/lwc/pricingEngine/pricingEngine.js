@@ -142,7 +142,7 @@ export const TERM_OPTIONS = [
 export const ADD_ON_RATES = {
   additionalLanguageSurveys: 2500, // per additional language, survey translation
   additionalLanguageReports: 7500, // per additional language, report translation
-  additionalSurveys: 12500,
+  additionalSurveys: 30000, // flat rate per additional survey
   additionalSurveyRevisions: 1500,
   additionalIntegrations: 10000,
   additionalBrands: 6000,

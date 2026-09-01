@@ -42,6 +42,7 @@ public with sharing class PricingToolController {
       SELECT Id
       FROM Pricebook2
       WHERE Name = :PRICEBOOK_NAME AND IsActive = TRUE
+      ORDER BY CreatedDate ASC, Id ASC
       LIMIT 1
     ];
     if (pricebooks.isEmpty()) {
@@ -99,6 +100,7 @@ public with sharing class PricingToolController {
         SELECT Id
         FROM Pricebook2
         WHERE Name = :PRICEBOOK_NAME AND IsActive = TRUE
+        ORDER BY CreatedDate ASC, Id ASC
         LIMIT 1
       ];
       if (pricebooks.isEmpty()) {
@@ -109,7 +111,7 @@ public with sharing class PricingToolController {
       Id pricebookId = pricebooks[0].Id;
 
       Opportunity opp = [
-        SELECT Id, Pricebook2Id
+        SELECT Id, Pricebook2Id, CurrencyIsoCode
         FROM Opportunity
         WHERE Id = :opportunityId
         LIMIT 1
@@ -126,6 +128,11 @@ public with sharing class PricingToolController {
         productCodes.add(item.productCode);
       }
 
+      // CurrencyIsoCode matters here: this org is multi-currency, so a product can have more
+      // than one active PricebookEntry on the same price book - one per currency. Without this
+      // filter, the query below could resolve to an entry in a different currency than the
+      // Opportunity's own, which fails on insert with "pricebook entry currency code does not
+      // match opportunity currency code".
       Map<String, Id> pricebookEntryIdByProductCode = new Map<String, Id>();
       for (PricebookEntry entry : [
         SELECT Id, Product2.ProductCode
@@ -133,6 +140,7 @@ public with sharing class PricingToolController {
         WHERE
           Pricebook2Id = :pricebookId
           AND Product2.ProductCode IN :productCodes
+          AND CurrencyIsoCode = :opp.CurrencyIsoCode
           AND IsActive = TRUE
       ]) {
         pricebookEntryIdByProductCode.put(

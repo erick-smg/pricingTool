@@ -132,8 +132,7 @@ const REPUTATION_EXTRA_LABELS = {
 };
 const ADDITIONAL_SURVEY_TYPE_LABELS = {
   postship: "Postship",
-  closeTheLoop: "Close the Loop",
-  callCenterAgentTrack: "Call Center (AgentTrack)"
+  closeTheLoop: "Close the Loop"
 };
 
 // Ignite Digital's extras ARE priced (unlike Reputation Management's/Add'l Surveys') - each
@@ -148,6 +147,11 @@ const IGNITE_DIGITAL_PRODUCT_CODE = "IGNITE-DIGITAL";
 const CASE_MANAGEMENT_PRODUCT_CODE = "CASE-MANAGEMENT";
 const SETUP_FEE_PRODUCT_CODE = "SETUP";
 const NEW_LOGO_OPPORTUNITY_TYPE = "New Logo";
+// On an Expansion Opportunity, the customer may already own Ignite Platform - the base
+// package becomes an opt-in checkbox instead of a fixed part of every quote, so a rep can
+// build a standalone-add-ons quote. Every other Opportunity Type keeps the base package
+// unconditionally, same as before.
+const EXPANSION_OPPORTUNITY_TYPE = "Expansion";
 const MAX_DISCOUNT_PERCENT = 10;
 
 function reverseMap(map) {
@@ -261,6 +265,10 @@ export default class PricingTool extends LightningElement {
   locations = 0;
   serviceTier = "Foundational";
   termMonths = "36";
+  opportunityType = "";
+  // Only meaningful when the Opportunity Type is Expansion (see includeBasePackageInQuote) -
+  // ignored otherwise, since every other Opportunity Type always includes the base package.
+  includeBasePackage = true;
 
   // Ignite Platform is now the fixed, always-included base package - purely a reference list,
   // never selected/deselected by the rep.
@@ -330,11 +338,11 @@ export default class PricingTool extends LightningElement {
       return;
     }
 
+    this.opportunityType = getFieldValue(data, OPPORTUNITY_TYPE_FIELD) || "";
+
     if (!this.setupFeeDefaultApplied) {
       this.setupFeeDefaultApplied = true;
-      this.setupFeeEnabled =
-        getFieldValue(data, OPPORTUNITY_TYPE_FIELD) ===
-        NEW_LOGO_OPPORTUNITY_TYPE;
+      this.setupFeeEnabled = this.opportunityType === NEW_LOGO_OPPORTUNITY_TYPE;
     }
 
     // Term, modeled discount, and locations aren't reliably recoverable from the synced
@@ -378,6 +386,16 @@ export default class PricingTool extends LightningElement {
 
   get serviceTierOptions() {
     return SERVICE_TIERS.map((tier) => ({ label: tier, value: tier }));
+  }
+
+  get isExpansionOpportunity() {
+    return this.opportunityType === EXPANSION_OPPORTUNITY_TYPE;
+  }
+
+  // False only when this is an Expansion Opportunity and the rep has explicitly unchecked the
+  // base package - every other Opportunity Type always includes it.
+  get includeBasePackageInQuote() {
+    return !this.isExpansionOpportunity || this.includeBasePackage;
   }
 
   get termOptions() {
@@ -453,8 +471,7 @@ export default class PricingTool extends LightningElement {
   get additionalSurveyTypeOptions() {
     return [
       { label: "Postship", value: "postship" },
-      { label: "Close the Loop", value: "closeTheLoop" },
-      { label: "Call Center (AgentTrack)", value: "callCenterAgentTrack" }
+      { label: "Close the Loop", value: "closeTheLoop" }
     ];
   }
 
@@ -508,17 +525,43 @@ export default class PricingTool extends LightningElement {
     return !Number.isFinite(this.communityTierSpec.includedAdminUsers);
   }
 
-  // The Ignite Platform base package is always part of every quote now, so Locations is
-  // always required - the setup fee formula still degrades gracefully to a flat $5,000 base
-  // at zero locations, but the base package itself needs a real count.
+  // Locations is only required when something actually priced per-location is in the quote -
+  // normally that's always true (the base package), but an Expansion Opportunity can exclude
+  // it and build a standalone-add-ons quote instead. The setup fee formula still degrades
+  // gracefully to a flat $5,000 base at zero locations, so it's never a reason on its own.
+  get locationsRequiredReasons() {
+    const reasons = [];
+    if (this.includeBasePackageInQuote) {
+      reasons.push("the Ignite Platform base package");
+    }
+    if (this.ratingsReviewsEnabled) {
+      reasons.push("Reputation Management");
+    }
+    if (
+      this.igniteExEnabled &&
+      this.igniteExSelectedItems.some(
+        (key) =>
+          key === "engagementOneConsultative" || key === "engagementTwoConsultative"
+      )
+    ) {
+      reasons.push("Ignite EX's Long Form Annual Survey");
+    }
+    return reasons;
+  }
+
+  get locationsRequired() {
+    return this.locationsRequiredReasons.length > 0;
+  }
+
   get locationsMissing() {
-    return !(Number(this.locations) > 0);
+    return this.locationsRequired && !(Number(this.locations) > 0);
   }
 
   get locationsRequiredMessage() {
-    return this.locationsMissing
-      ? "Locations is required for the Ignite Platform base package."
-      : "";
+    if (!this.locationsMissing) {
+      return "";
+    }
+    return `Locations is required for: ${this.locationsRequiredReasons.join(", ")}.`;
   }
 
   get baseQuote() {
@@ -539,6 +582,10 @@ export default class PricingTool extends LightningElement {
       },
       this.locations
     );
+  }
+
+  get selectedAddOnLines() {
+    return this.addOnsResult.lines.filter((line) => line.quantity > 0);
   }
 
   get callCenterResult() {
@@ -575,10 +622,14 @@ export default class PricingTool extends LightningElement {
     return `One-Time Setup Fee ($${this.setupFeeAmount.toLocaleString()})`;
   }
 
-  // The full list-price (pre-discount) recurring total across every product in the quote,
-  // since the base package is now unconditionally part of every quote.
+  // The full list-price (pre-discount) recurring total across every product in the quote. The
+  // base package's contribution is skipped for an Expansion Opportunity with it unchecked -
+  // add-ons remain fully priceable on their own either way.
   get recurringListAnnual() {
-    let total = this.baseQuote.totalAnnual + this.addOnsResult.annualTotal;
+    let total = this.addOnsResult.annualTotal;
+    if (this.includeBasePackageInQuote) {
+      total += this.baseQuote.totalAnnual;
+    }
     if (this.agentTrackEnabled) {
       total += this.callCenterResult.annualTotal;
     }
@@ -705,11 +756,13 @@ export default class PricingTool extends LightningElement {
     }
 
     let recoveredLocations = null;
+    let foundBasePackageLine = false;
 
     for (const line of lineItems) {
       const code = line.productCode;
 
       if (REVERSE_BASE_PACKAGE_PRODUCT_CODES[code]) {
+        foundBasePackageLine = true;
         this.serviceTier = REVERSE_BASE_PACKAGE_PRODUCT_CODES[code];
         recoveredLocations =
           recoveredLocations ?? parseLocationsFromDescription(line.description);
@@ -804,6 +857,10 @@ export default class PricingTool extends LightningElement {
     if (recoveredLocations !== null) {
       this.locations = recoveredLocations;
     }
+    // Only meaningful on an Expansion Opportunity (see includeBasePackageInQuote) - if this
+    // Opportunity's synced products never included a base package line, it was configured as
+    // a standalone-add-ons quote, so the checkbox should come back unchecked too.
+    this.includeBasePackage = foundBasePackageLine;
 
     this.dispatchEvent(
       new ShowToastEvent({
@@ -902,13 +959,15 @@ export default class PricingTool extends LightningElement {
   get lineItemRequests() {
     const lines = [];
 
-    lines.push({
-      productCode: BASE_PACKAGE_PRODUCT_CODES[this.serviceTier],
-      quantity: 1,
-      unitPrice: this.applyDiscount(this.baseQuote.totalAnnual),
-      description: `Ignite Platform (${this.serviceTier}) — ${this.locations} locations`,
-      isOneTime: false
-    });
+    if (this.includeBasePackageInQuote) {
+      lines.push({
+        productCode: BASE_PACKAGE_PRODUCT_CODES[this.serviceTier],
+        quantity: 1,
+        unitPrice: this.applyDiscount(this.baseQuote.totalAnnual),
+        description: `Ignite Platform (${this.serviceTier}) — ${this.locations} locations`,
+        isOneTime: false
+      });
+    }
     lines.push(...this.buildAddOnLineItems(this.addOnsResult.lines));
 
     if (this.agentTrackEnabled && this.callCenterResult.annualTotal > 0) {
@@ -945,6 +1004,10 @@ export default class PricingTool extends LightningElement {
 
   handleServiceTierChange(event) {
     this.serviceTier = event.detail.value;
+  }
+
+  handleIncludeBasePackageToggle(event) {
+    this.includeBasePackage = event.target.checked;
   }
 
   handleTermChange(event) {

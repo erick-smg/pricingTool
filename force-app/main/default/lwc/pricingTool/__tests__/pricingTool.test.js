@@ -363,7 +363,7 @@ describe("c-pricing-tool", () => {
     ).toBe(110000);
   });
 
-  it("reveals the Add'l Surveys type checklist only once a quantity is entered", async () => {
+  it("prices Add'l Surveys at a flat $30,000/survey, revealing the survey type checklist only once a quantity is entered", async () => {
     const element = createTool();
     await flush();
 
@@ -374,7 +374,7 @@ describe("c-pricing-tool", () => {
     const qtyInput = element.shadowRoot.querySelector(
       '[data-field="additionalSurveys"]'
     );
-    qtyInput.value = 3;
+    qtyInput.value = 2;
     qtyInput.dispatchEvent(new CustomEvent("change"));
     await flush();
 
@@ -384,9 +384,48 @@ describe("c-pricing-tool", () => {
     expect(typesGroup).not.toBeNull();
     expect(typesGroup.options.map((option) => option.value)).toEqual([
       "postship",
-      "closeTheLoop",
-      "callCenterAgentTrack"
+      "closeTheLoop"
     ]);
+
+    const addOnRow = Array.from(
+      element.shadowRoot.querySelectorAll('[data-id="add-ons-table"] tbody tr')
+    ).find((row) => row.textContent.includes("Add'l Surveys"));
+    expect(addOnRow).not.toBeUndefined();
+    // 2 surveys x $30,000/survey = $60,000/yr -> at the default 0 (treated as 1)
+    // locations, that's $5,000/loc/mo.
+    expect(
+      addOnRow.querySelector("lightning-formatted-number").value
+    ).toBe(5000);
+
+    qtyInput.value = 0;
+    qtyInput.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    expect(
+      element.shadowRoot.querySelector('[data-id="additional-survey-types"]')
+    ).toBeNull();
+  });
+
+  it("hides the add-ons table entirely until at least one add-on is selected", async () => {
+    const element = createTool();
+    await flush();
+
+    expect(
+      element.shadowRoot.querySelector('[data-id="add-ons-table"]')
+    ).toBeNull();
+
+    const qtyInput = element.shadowRoot.querySelector(
+      '[data-field="additionalBrands"]'
+    );
+    qtyInput.value = 1;
+    qtyInput.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const table = element.shadowRoot.querySelector('[data-id="add-ons-table"]');
+    expect(table).not.toBeNull();
+    const rows = table.querySelectorAll("tbody tr");
+    expect(rows.length).toBe(1);
+    expect(rows[0].textContent).toContain("Add'l Brands");
   });
 
   it("caps the modeled discount % at 10", async () => {
@@ -927,5 +966,153 @@ describe("c-pricing-tool", () => {
       '[data-id="discount-input"]'
     );
     expect(discountInput.value).toBe(10);
+  });
+
+  it("never shows the Include Base Package checkbox for a non-Expansion Opportunity, and always requires locations", async () => {
+    const element = createTool();
+    element.recordId = "006000000000001AAA";
+    await flush();
+
+    getRecord.emit({
+      fields: {
+        Type: { value: "New Logo" },
+        Term_Length__c: { value: null },
+        Discount__c: { value: null },
+        Number_of_Locations__c: { value: null }
+      }
+    });
+    await flush();
+
+    expect(
+      element.shadowRoot.querySelector('[data-id="include-base-package-toggle"]')
+    ).toBeNull();
+    expect(
+      element.shadowRoot.querySelector('[data-id="service-tier-combobox"]')
+    ).not.toBeNull();
+
+    const addButton = element.shadowRoot.querySelector(
+      '[data-id="add-products-button"]'
+    );
+    expect(addButton.disabled).toBe(true);
+    expect(
+      element.shadowRoot.querySelector(".slds-notify_alert").textContent
+    ).toContain("the Ignite Platform base package");
+  });
+
+  it("lets an Expansion Opportunity exclude the base package and quote a standalone add-on with no locations required", async () => {
+    const element = createTool();
+    element.recordId = "006000000000001AAA";
+    await flush();
+
+    getRecord.emit({
+      fields: {
+        Type: { value: "Expansion" },
+        Term_Length__c: { value: null },
+        Discount__c: { value: null },
+        Number_of_Locations__c: { value: null }
+      }
+    });
+    await flush();
+
+    const toggle = element.shadowRoot.querySelector(
+      '[data-id="include-base-package-toggle"]'
+    );
+    expect(toggle).not.toBeNull();
+    expect(toggle.checked).toBe(true);
+
+    toggle.checked = false;
+    toggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    expect(
+      element.shadowRoot.querySelector('[data-id="service-tier-combobox"]')
+    ).toBeNull();
+
+    // With the base package excluded and nothing location-priced selected, locations
+    // shouldn't block syncing a standalone one-time add-on.
+    const caseManagementToggle = element.shadowRoot.querySelector(
+      '[data-id="case-management-toggle"]'
+    );
+    caseManagementToggle.checked = true;
+    caseManagementToggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const rows = element.shadowRoot.querySelectorAll(
+      ".slds-theme_shade table tbody tr"
+    );
+    expect(rows.length).toBe(1);
+    expect(rows[0].textContent).toContain("Case Premium");
+
+    const addButton = element.shadowRoot.querySelector(
+      '[data-id="add-products-button"]'
+    );
+    expect(addButton.disabled).toBe(false);
+  });
+
+  it("re-requires locations on an Expansion Opportunity once Reputation Management is added back in, even with the base package excluded", async () => {
+    const element = createTool();
+    element.recordId = "006000000000001AAA";
+    await flush();
+
+    getRecord.emit({
+      fields: {
+        Type: { value: "Expansion" },
+        Term_Length__c: { value: null },
+        Discount__c: { value: null },
+        Number_of_Locations__c: { value: null }
+      }
+    });
+    await flush();
+
+    const toggle = element.shadowRoot.querySelector(
+      '[data-id="include-base-package-toggle"]'
+    );
+    toggle.checked = false;
+    toggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const rrToggle = element.shadowRoot.querySelector('[data-id="rr-toggle"]');
+    rrToggle.checked = true;
+    rrToggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const addButton = element.shadowRoot.querySelector(
+      '[data-id="add-products-button"]'
+    );
+    expect(addButton.disabled).toBe(true);
+    expect(
+      element.shadowRoot.querySelector(".slds-notify_alert").textContent
+    ).toContain("Reputation Management");
+  });
+
+  it("rehydrates the Include Base Package checkbox as unchecked when an existing Expansion quote has no base package line", async () => {
+    const element = createTool();
+    element.recordId = "006000000000001AAA";
+    await flush();
+
+    getRecord.emit({
+      fields: {
+        Type: { value: "Expansion" },
+        Term_Length__c: { value: null },
+        Discount__c: { value: null },
+        Number_of_Locations__c: { value: null }
+      }
+    });
+    await flush();
+
+    getExistingLineItems.emit([
+      {
+        productCode: "CASE-MANAGEMENT",
+        quantity: 1,
+        unitPrice: 7500,
+        description: "Case Premium"
+      }
+    ]);
+    await flush();
+
+    const toggle = element.shadowRoot.querySelector(
+      '[data-id="include-base-package-toggle"]'
+    );
+    expect(toggle.checked).toBe(false);
   });
 });
