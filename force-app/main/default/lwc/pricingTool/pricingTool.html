@@ -1,5 +1,24 @@
 <template>
   <lightning-card title="SMG Pricing Tool" icon-name="standard:pricebook">
+    <!-- Relative path, not the full instance URL, so this resolves in whatever org the
+         component is deployed to. Opens in a new tab on purpose: navigating in-app would
+         discard the quote the seller has in progress. -->
+    <div slot="actions">
+      <a
+        data-id="seller-guide-link"
+        href="/lightning/r/ContentDocument/069Ud00000idtptIAA/view"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="slds-button slds-button_neutral"
+      >
+        <lightning-icon
+          icon-name="utility:help"
+          size="xx-small"
+          class="slds-m-right_xx-small"
+        ></lightning-icon>
+        Seller Guide
+      </a>
+    </div>
     <div class="slds-p-around_medium">
       <lightning-layout multiple-rows="true">
         <lightning-layout-item size="4" padding="around-small">

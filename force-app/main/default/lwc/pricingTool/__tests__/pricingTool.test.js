@@ -58,6 +58,21 @@ describe("c-pricing-tool", () => {
     expect(termCombobox.value).toBe("36");
   });
 
+  it("links to the seller guide in a new tab, by relative path so it resolves per-org", async () => {
+    const element = createTool();
+    await flush();
+
+    const link = element.shadowRoot.querySelector(
+      '[data-id="seller-guide-link"]'
+    );
+    expect(link).not.toBeNull();
+    expect(link.getAttribute("href")).toBe(
+      "/lightning/r/ContentDocument/069Ud00000idtptIAA/view"
+    );
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toContain("noopener");
+  });
+
   it("keeps the Service Tier combobox visible at every location count, including above 5,000", async () => {
     const element = createTool();
     await flush();
