@@ -233,7 +233,7 @@ describe("c-pricing-tool", () => {
     pulseInput.dispatchEvent(new CustomEvent("change"));
     await flush();
 
-    // Pulse = $20,000 + $5,000 agile-analysis fee = $25,000 each, one-time.
+    // Pulse = a flat $20,000 each, one-time -> 2 pulses = $40,000.
     expect(
       element.shadowRoot.querySelector('[data-id="quoted-price-annual"]')
     ).not.toBeNull();
@@ -247,7 +247,7 @@ describe("c-pricing-tool", () => {
     expect(pulseRow.textContent).toContain("(one-time)");
     expect(
       pulseRow.querySelector("lightning-formatted-number").value
-    ).toBe(50000);
+    ).toBe(40000);
   });
 
   it("reveals Ignite Digital's extras checklist once toggled on", async () => {

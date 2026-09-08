@@ -801,12 +801,11 @@ export const IGNITE_EX_LOCATION_BANDS = [
   }
 ];
 
-// Flat (non-banded) Ignite EX items. pulseAgileAnalysisFee is inferred as half of
-// agileAnalysesPairFee ("2 Agile Analyses" = $10,000) - the sheet gives Pulse's cost as
-// "$20,000 + agile analysis" without stating that fee on its own; confirm before relying on it.
+// Flat (non-banded) Ignite EX items. Pulse is a flat $20,000 per pulse - the source sheet
+// listed it as "$20,000 + agile analysis", but per the model owner the quoted rate is the
+// $20,000 alone; any agile analysis is selected (and priced) separately.
 export const IGNITE_EX_FLAT_ITEMS = {
-  pulseBaseFee: 20000,
-  pulseAgileAnalysisFee: 5000,
+  pulseFee: 20000,
   onboardSetupFee: 10000,
   onboardAnnualFee: 5000,
   staggeredOnboardFee: 40000,
@@ -891,9 +890,7 @@ export function computeIgniteEx({ selectedItems, locations, pulseQuantity }) {
       key: "pulse",
       label: IGNITE_EX_ITEM_LABELS.pulse,
       quantity: pulses,
-      unitPrice:
-        IGNITE_EX_FLAT_ITEMS.pulseBaseFee +
-        IGNITE_EX_FLAT_ITEMS.pulseAgileAnalysisFee,
+      unitPrice: IGNITE_EX_FLAT_ITEMS.pulseFee,
       isOneTime: true,
       isCustomPricing: false
     });

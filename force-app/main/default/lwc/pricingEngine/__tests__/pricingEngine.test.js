@@ -404,15 +404,15 @@ describe("computeIgniteEx", () => {
     expect(result.oneTimeTotal).toBe(0);
   });
 
-  it("prices Pulse as $20,000 + $5,000 agile-analysis fee per pulse, one-time", () => {
+  it("prices Pulse as a flat $20,000 per pulse, one-time", () => {
     const result = computeIgniteEx({
       selectedItems: ["pulse"],
       locations: 600,
       pulseQuantity: 3
     });
     expect(result.lines[0].quantity).toBe(3);
-    expect(result.lines[0].unitPrice).toBe(25000);
-    expect(result.oneTimeTotal).toBe(75000);
+    expect(result.lines[0].unitPrice).toBe(20000);
+    expect(result.oneTimeTotal).toBe(60000);
     expect(result.annualTotal).toBe(0);
   });
 
