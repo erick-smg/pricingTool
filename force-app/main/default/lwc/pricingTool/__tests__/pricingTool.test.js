@@ -5,8 +5,7 @@ import getExistingLineItems from "@salesforce/apex/PricingToolController.getExis
 import {
   computeBaseQuote,
   computeRatingsReviews,
-  computeCommunityQuote,
-  COMMUNITY_TIER_SPECS
+  computeCommunityQuote
 } from "c/pricingEngine";
 import { exportQuoteToPowerPoint } from "c/pptxExport";
 
@@ -586,7 +585,7 @@ describe("c-pricing-tool", () => {
     expect(advancedPerLocation).not.toBe(foundationalPerLocation);
   });
 
-  it("shows the Ignite Communities calculator only when the toggle is on, defaulting to the DIY tier", async () => {
+  it("shows the Ignite Communities calculator only when the toggle is on, defaulting to the Starter tier", async () => {
     const element = createTool();
     await flush();
 
@@ -607,58 +606,25 @@ describe("c-pricing-tool", () => {
     expect(tierCombobox).not.toBeNull();
     expect(tierCombobox.value).toBe("DIY");
 
-    const sizeInput = element.shadowRoot.querySelector(
-      '[data-id="community-size-input"]'
-    );
-    expect(sizeInput.value).toBe(1000);
-  });
-
-  it("disables AGILE/CONSULTANCY project inputs on the DIY tier, enables them on Advanced, and resets community size to the new tier's default", async () => {
-    const element = createTool();
-    await flush();
-
-    const igniteCommunitiesToggle = element.shadowRoot.querySelector(
-      '[data-id="ignite-communities-toggle"]'
-    );
-    igniteCommunitiesToggle.checked = true;
-    igniteCommunitiesToggle.dispatchEvent(new CustomEvent("change"));
-    await flush();
-
     expect(
-      element.shadowRoot.querySelector('[data-id="community-agile-input"]')
-        .disabled
-    ).toBe(true);
+      element.shadowRoot.querySelector('[data-id="community-members-input"]')
+        .value
+    ).toBe(1000);
+    expect(
+      element.shadowRoot.querySelector('[data-id="community-cpa-input"]').value
+    ).toBe(6);
+    expect(
+      element.shadowRoot.querySelector('[data-id="community-briefs-input"]')
+        .value
+    ).toBe(2);
     expect(
       element.shadowRoot.querySelector(
-        '[data-id="community-consultancy-input"]'
-      ).disabled
-    ).toBe(true);
-
-    const tierCombobox = element.shadowRoot.querySelector(
-      '[data-id="community-tier-combobox"]'
-    );
-    tierCombobox.dispatchEvent(
-      new CustomEvent("change", { detail: { value: "Advanced" } })
-    );
-    await flush();
-
-    expect(
-      element.shadowRoot.querySelector('[data-id="community-agile-input"]')
-        .disabled
-    ).toBe(false);
-    expect(
-      element.shadowRoot.querySelector(
-        '[data-id="community-consultancy-input"]'
-      ).disabled
-    ).toBe(false);
-
-    const sizeInput = element.shadowRoot.querySelector(
-      '[data-id="community-size-input"]'
-    );
-    expect(sizeInput.value).toBe(2000);
+        '[data-id="community-diy-projects-input"]'
+      ).value
+    ).toBe(48);
   });
 
-  it("disables the admin-user overage input on the Advanced tier (unlimited included)", async () => {
+  it("offers only the Starter, Foundation, and Advanced community tiers", async () => {
     const element = createTool();
     await flush();
 
@@ -672,15 +638,103 @@ describe("c-pricing-tool", () => {
     const tierCombobox = element.shadowRoot.querySelector(
       '[data-id="community-tier-combobox"]'
     );
+    expect(tierCombobox.options.map((option) => option.value)).toEqual([
+      "DIY",
+      "Foundation",
+      "Advanced"
+    ]);
+  });
+
+  it("renders the workbook line breakdown and totals the Starter community at 55,830", async () => {
+    const element = createTool();
+    await flush();
+
+    const igniteCommunitiesToggle = element.shadowRoot.querySelector(
+      '[data-id="ignite-communities-toggle"]'
+    );
+    igniteCommunitiesToggle.checked = true;
+    igniteCommunitiesToggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const rows = element.shadowRoot.querySelectorAll(
+      '[data-id="community-quote-table"] tbody tr'
+    );
+    // Platform Licence, Recruitment & Tagging, Incentives, Service Level. No AGILE or
+    // CONSULTANCY projects and no discount on the Starter tier.
+    expect(rows.length).toBe(4);
+
+    const amounts = Array.from(
+      element.shadowRoot.querySelectorAll(
+        '[data-id="community-quote-table"] tbody lightning-formatted-number'
+      )
+    ).map((el) => el.value);
+    expect(amounts).toEqual([40000, 8000, 4080, 3750]);
+  });
+
+  it("adds an AGILE line and a tier discount line on the Advanced tier", async () => {
+    const element = createTool();
+    await flush();
+
+    const igniteCommunitiesToggle = element.shadowRoot.querySelector(
+      '[data-id="ignite-communities-toggle"]'
+    );
+    igniteCommunitiesToggle.checked = true;
+    igniteCommunitiesToggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const tierCombobox = element.shadowRoot.querySelector(
+      '[data-id="community-tier-combobox"]'
+    );
     tierCombobox.dispatchEvent(
       new CustomEvent("change", { detail: { value: "Advanced" } })
     );
     await flush();
 
-    const adminInput = element.shadowRoot.querySelector(
-      '[data-id="community-admin-input"]'
+    const amounts = Array.from(
+      element.shadowRoot.querySelectorAll(
+        '[data-id="community-quote-table"] tbody lightning-formatted-number'
+      )
+    ).map((el) => el.value);
+    // Platform, Recruitment, Incentives, Service Level, AGILE, CONSULTANCY, discount.
+    expect(amounts).toEqual([
+      40000, 8000, 4080, 22709, 30000, 35800, -6425.45
+    ]);
+  });
+
+  it("shows the per-additional-community recruitment inputs only once more than one community is quoted", async () => {
+    const element = createTool();
+    await flush();
+
+    const igniteCommunitiesToggle = element.shadowRoot.querySelector(
+      '[data-id="ignite-communities-toggle"]'
     );
-    expect(adminInput.disabled).toBe(true);
+    igniteCommunitiesToggle.checked = true;
+    igniteCommunitiesToggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    expect(
+      element.shadowRoot.querySelector(
+        '[data-id="community-additional-recruitment-input"]'
+      )
+    ).toBeNull();
+
+    const marketsInput = element.shadowRoot.querySelector(
+      '[data-id="community-markets-input"]'
+    );
+    marketsInput.value = 2;
+    marketsInput.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    expect(
+      element.shadowRoot.querySelector(
+        '[data-id="community-additional-recruitment-input"]'
+      )
+    ).not.toBeNull();
+    expect(
+      element.shadowRoot.querySelector(
+        '[data-id="community-additional-incentives-input"]'
+      )
+    ).not.toBeNull();
   });
 
   it("always shows the base package line in the Quote Summary, even with nothing else toggled on", async () => {
@@ -799,11 +853,7 @@ describe("c-pricing-tool", () => {
     const rrAnnual = computeRatingsReviews("pro", 500).annual;
     const communityAnnual = computeCommunityQuote({
       tier: "DIY",
-      numberOfMarkets: 1,
-      communitySizePerMarket: COMMUNITY_TIER_SPECS.DIY.includedCommunitySize,
-      additionalAgileProjects: 0,
-      additionalConsultancyProjects: 0,
-      additionalAdminUsers: 0
+      numberOfMarkets: 1
     }).totalAnnual;
     // Mouseflow Config defaults to its own Essential tier -> $45,000.
     const igniteDigitalAnnual = 45000;
@@ -886,7 +936,7 @@ describe("c-pricing-tool", () => {
     expect(serviceTierCombobox.value).toBe("Advanced");
   });
 
-  it("pre-fills Ignite Communities' tier, markets, and size from the existing line item", async () => {
+  it("pre-fills Ignite Communities' tier, communities, and members recruited from the existing line item", async () => {
     const element = createTool();
     element.recordId = "006000000000001AAA";
     await flush();
@@ -895,8 +945,9 @@ describe("c-pricing-tool", () => {
       {
         productCode: "IGNITE-COMMUNITIES",
         quantity: 1,
-        unitPrice: 217627.9,
-        description: "Ignite Communities — Advanced, 1 market(s), 2000/market"
+        unitPrice: 134163.55,
+        description:
+          "Ignite Communities — Advanced, 2 communities, 1500 members recruited"
       }
     ]);
     await flush();
@@ -911,10 +962,14 @@ describe("c-pricing-tool", () => {
     );
     expect(tierCombobox.value).toBe("Advanced");
 
-    const sizeInput = element.shadowRoot.querySelector(
-      '[data-id="community-size-input"]'
-    );
-    expect(sizeInput.value).toBe(2000);
+    expect(
+      element.shadowRoot.querySelector('[data-id="community-markets-input"]')
+        .value
+    ).toBe(2);
+    expect(
+      element.shadowRoot.querySelector('[data-id="community-members-input"]')
+        .value
+    ).toBe(1500);
   });
 
   it("does not pre-fill anything when the Opportunity has no existing SMG Price Book products", async () => {

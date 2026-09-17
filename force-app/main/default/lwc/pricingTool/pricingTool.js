@@ -18,6 +18,10 @@ import {
   CASE_MANAGEMENT_FEE,
   COMMUNITY_TIERS,
   COMMUNITY_TIER_SPECS,
+  COMMUNITY_RECRUITMENT_DEFAULTS,
+  COMMUNITY_DIY_INCENTIVE_DEFAULTS,
+  COMMUNITY_AGILE_PROJECT_RATE,
+  COMMUNITY_CONSULTANCY_PROJECT_RATE,
   IGNITE_EX_ITEM_KEYS,
   IGNITE_EX_ITEM_LABELS,
   IGNITE_DIGITAL_EXTRA_KEYS,
@@ -242,7 +246,7 @@ const COMMUNITY_TIER_BY_LABEL = Object.fromEntries(
 
 function parseCommunityConfigurationFromDescription(description) {
   const match =
-    /Ignite Communities — (.+?), (\d+) market\(s\), (\d+)\/market/.exec(
+    /Ignite Communities — (.+?), (\d+) communit(?:y|ies), (\d+) members recruited/.exec(
       description || ""
     );
   if (!match) {
@@ -255,8 +259,21 @@ function parseCommunityConfigurationFromDescription(description) {
   return {
     tier,
     markets: Number(match[2]),
-    communitySizePerMarket: Number(match[3])
+    membersRecruited: Number(match[3])
   };
+}
+
+// Calculator fields fall back to the workbook default rather than 0 when a seller clears
+// them, matching computeCommunityQuote so the displayed inputs and the price agree.
+function communityInputValue(raw, fallback) {
+  if (raw === "" || raw === null || raw === undefined) {
+    return fallback;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) {
+    return fallback;
+  }
+  return value;
 }
 
 export default class PricingTool extends LightningElement {
@@ -315,10 +332,16 @@ export default class PricingTool extends LightningElement {
 
   communityTier = "DIY";
   communityMarkets = 1;
-  communitySizePerMarket = COMMUNITY_TIER_SPECS.DIY.includedCommunitySize;
+  communityMembersRecruited = COMMUNITY_RECRUITMENT_DEFAULTS.membersRecruited;
+  communityCostPerAcquisition = COMMUNITY_RECRUITMENT_DEFAULTS.costPerAcquisition;
+  communityTaggingBriefs = COMMUNITY_RECRUITMENT_DEFAULTS.taggingBriefs;
+  communityIncentivePerBrief = COMMUNITY_RECRUITMENT_DEFAULTS.incentivePerBrief;
+  communityDiyProjectsPerYear = COMMUNITY_DIY_INCENTIVE_DEFAULTS.projectsPerYear;
+  communityDiyCostPerProject = COMMUNITY_DIY_INCENTIVE_DEFAULTS.costPerProject;
   communityAdditionalAgileProjects = 0;
   communityAdditionalConsultancyProjects = 0;
-  communityAdditionalAdminUsers = 0;
+  communityAdditionalMarketRecruitmentFee = 0;
+  communityAdditionalMarketIncentiveFee = 0;
 
   isSyncingProducts = false;
 
@@ -502,10 +525,17 @@ export default class PricingTool extends LightningElement {
     return computeCommunityQuote({
       tier: this.communityTier,
       numberOfMarkets: this.communityMarkets,
-      communitySizePerMarket: this.communitySizePerMarket,
+      membersRecruited: this.communityMembersRecruited,
+      costPerAcquisition: this.communityCostPerAcquisition,
+      taggingBriefs: this.communityTaggingBriefs,
+      incentivePerBrief: this.communityIncentivePerBrief,
+      diyProjectsPerYear: this.communityDiyProjectsPerYear,
+      diyCostPerProject: this.communityDiyCostPerProject,
       additionalAgileProjects: this.communityAdditionalAgileProjects,
       additionalConsultancyProjects: this.communityAdditionalConsultancyProjects,
-      additionalAdminUsers: this.communityAdditionalAdminUsers
+      additionalMarketRecruitmentFee:
+        this.communityAdditionalMarketRecruitmentFee,
+      additionalMarketIncentiveFee: this.communityAdditionalMarketIncentiveFee
     });
   }
 
@@ -513,16 +543,85 @@ export default class PricingTool extends LightningElement {
     return round2(this.communityTierSpec.tierDiscountPercent * 100);
   }
 
-  get communityAgileDisabled() {
-    return !this.communityTierSpec.agileProjectRate;
+  get communityHasAdditionalMarkets() {
+    return this.communityMarkets > 1;
   }
 
-  get communityConsultancyDisabled() {
-    return !this.communityTierSpec.consultancyProjectRate;
+  get communityAgileProjectRate() {
+    return COMMUNITY_AGILE_PROJECT_RATE;
   }
 
-  get communityAdminOverageDisabled() {
-    return !Number.isFinite(this.communityTierSpec.includedAdminUsers);
+  get communityConsultancyProjectRate() {
+    return COMMUNITY_CONSULTANCY_PROJECT_RATE;
+  }
+
+  get communityIncludedProjectsSummary() {
+    const spec = this.communityTierSpec;
+    return `${spec.includedAgileProjects} AGILE and ${spec.includedConsultancyProjects} CONSULTANCY projects included on this tier.`;
+  }
+
+  // The workbook Summary Quote line structure, rendered so a seller sees the same
+  // breakdown that appears in the pricing summary they were sent.
+  get communityQuoteLines() {
+    const quote = this.communityQuote;
+    const perMarketNote = this.communityHasAdditionalMarkets
+      ? `${quote.markets} communities`
+      : "Base community";
+    const lines = [
+      {
+        key: "platform",
+        label: "Platform Licence",
+        detail: this.communityHasAdditionalMarkets
+          ? `${perMarketNote} — each additional at 50% of the previous`
+          : perMarketNote,
+        amount: quote.platformFeeTotal
+      },
+      {
+        key: "recruitment",
+        label: "Recruitment & Tagging",
+        detail: `${quote.membersRecruited} members recruited`,
+        amount: quote.recruitmentAndTaggingTotal
+      },
+      {
+        key: "incentives",
+        label: "Incentives (DIY)",
+        detail: `${quote.diyProjectsPerYear} DIY projects/year`,
+        amount: quote.incentivesTotal
+      },
+      {
+        key: "serviceLevel",
+        label: "Servicing & Support — Service Level",
+        detail: this.communityHasAdditionalMarkets
+          ? `${perMarketNote} — each additional at 25% of the previous`
+          : perMarketNote,
+        amount: quote.serviceLevelTotal
+      }
+    ];
+    if (quote.agileProjects > 0) {
+      lines.push({
+        key: "agile",
+        label: "Servicing & Support — AGILE Projects",
+        detail: `${quote.agileProjects} projects (${quote.includedAgileProjects} included)`,
+        amount: quote.agileProjectsTotal
+      });
+    }
+    if (quote.consultancyProjects > 0) {
+      lines.push({
+        key: "consultancy",
+        label: "Servicing & Support — CONSULTANCY Projects",
+        detail: `${quote.consultancyProjects} projects (${quote.includedConsultancyProjects} included)`,
+        amount: quote.consultancyProjectsTotal
+      });
+    }
+    if (quote.subscriptionTierDiscount > 0) {
+      lines.push({
+        key: "discount",
+        label: "Subscription Tier Discount",
+        detail: `${this.communityTierDiscountPercentDisplay}% — excludes recruitment & incentives`,
+        amount: -quote.subscriptionTierDiscount
+      });
+    }
+    return lines;
   }
 
   // Locations is only required when something actually priced per-location is in the quote -
@@ -819,7 +918,7 @@ export default class PricingTool extends LightningElement {
         if (communityConfig) {
           this.communityTier = communityConfig.tier;
           this.communityMarkets = communityConfig.markets;
-          this.communitySizePerMarket = communityConfig.communitySizePerMarket;
+          this.communityMembersRecruited = communityConfig.membersRecruited;
         }
         continue;
       }
@@ -916,7 +1015,11 @@ export default class PricingTool extends LightningElement {
         productCode: IGNITE_COMMUNITIES_PRODUCT_CODE,
         quantity: 1,
         unitPrice: this.applyDiscount(quote.totalAnnual),
-        description: `Ignite Communities — ${quote.label}, ${quote.markets} market(s), ${quote.communitySizePerMarket}/market`,
+        description: `Ignite Communities — ${quote.label}, ${
+          quote.markets
+        } ${quote.markets === 1 ? "community" : "communities"}, ${
+          quote.membersRecruited
+        } members recruited`,
         isOneTime: false
       });
     }
@@ -1041,10 +1144,6 @@ export default class PricingTool extends LightningElement {
 
   handleCommunityTierChange(event) {
     this.communityTier = event.detail.value;
-    // Reset to the new tier's included size so switching tiers doesn't carry over a
-    // surcharge that no longer makes sense (e.g. Advanced's 2,000 while viewing DIY).
-    this.communitySizePerMarket =
-      COMMUNITY_TIER_SPECS[this.communityTier].includedCommunitySize;
   }
 
   handleCommunityMarketsChange(event) {
@@ -1052,9 +1151,46 @@ export default class PricingTool extends LightningElement {
     this.communityMarkets = Number.isFinite(value) && value > 0 ? value : 1;
   }
 
-  handleCommunitySizeChange(event) {
-    const value = Number(event.target.value);
-    this.communitySizePerMarket = Number.isFinite(value) && value >= 0 ? value : 0;
+  handleCommunityMembersChange(event) {
+    this.communityMembersRecruited = communityInputValue(
+      event.target.value,
+      COMMUNITY_RECRUITMENT_DEFAULTS.membersRecruited
+    );
+  }
+
+  handleCommunityCostPerAcquisitionChange(event) {
+    this.communityCostPerAcquisition = communityInputValue(
+      event.target.value,
+      COMMUNITY_RECRUITMENT_DEFAULTS.costPerAcquisition
+    );
+  }
+
+  handleCommunityTaggingBriefsChange(event) {
+    this.communityTaggingBriefs = communityInputValue(
+      event.target.value,
+      COMMUNITY_RECRUITMENT_DEFAULTS.taggingBriefs
+    );
+  }
+
+  handleCommunityIncentivePerBriefChange(event) {
+    this.communityIncentivePerBrief = communityInputValue(
+      event.target.value,
+      COMMUNITY_RECRUITMENT_DEFAULTS.incentivePerBrief
+    );
+  }
+
+  handleCommunityDiyProjectsChange(event) {
+    this.communityDiyProjectsPerYear = communityInputValue(
+      event.target.value,
+      COMMUNITY_DIY_INCENTIVE_DEFAULTS.projectsPerYear
+    );
+  }
+
+  handleCommunityDiyCostChange(event) {
+    this.communityDiyCostPerProject = communityInputValue(
+      event.target.value,
+      COMMUNITY_DIY_INCENTIVE_DEFAULTS.costPerProject
+    );
   }
 
   handleCommunityAgileChange(event) {
@@ -1069,9 +1205,15 @@ export default class PricingTool extends LightningElement {
       Number.isFinite(value) && value > 0 ? value : 0;
   }
 
-  handleCommunityAdminChange(event) {
+  handleCommunityAdditionalMarketRecruitmentChange(event) {
     const value = Number(event.target.value);
-    this.communityAdditionalAdminUsers =
+    this.communityAdditionalMarketRecruitmentFee =
+      Number.isFinite(value) && value > 0 ? value : 0;
+  }
+
+  handleCommunityAdditionalMarketIncentiveChange(event) {
+    const value = Number(event.target.value);
+    this.communityAdditionalMarketIncentiveFee =
       Number.isFinite(value) && value > 0 ? value : 0;
   }
 

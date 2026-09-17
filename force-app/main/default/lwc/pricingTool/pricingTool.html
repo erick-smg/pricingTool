@@ -471,46 +471,131 @@
               </h3>
               <p class="slds-text-body_small slds-m-bottom_small">
                 Rolls up into the single Ignite Communities line item — no
-                separate products for platform, recruitment, or servicing.
+                separate products for platform, recruitment, incentives or
+                servicing.
               </p>
 
               <lightning-layout multiple-rows="true">
                 <lightning-layout-item size="4" padding="around-small">
                   <lightning-combobox
                     data-id="community-tier-combobox"
-                    label="Tier"
+                    label="Subscription Tier"
                     value={communityTier}
                     options={communityTierOptions}
                     onchange={handleCommunityTierChange}
                   ></lightning-combobox>
+                  <p class="slds-text-body_small">
+                    {communityIncludedProjectsSummary}
+                  </p>
                 </lightning-layout-item>
                 <lightning-layout-item size="4" padding="around-small">
                   <lightning-input
                     data-id="community-markets-input"
                     type="number"
-                    label="Number of Markets"
+                    label="Number of Communities (Markets)"
                     value={communityMarkets}
                     min="1"
                     step="1"
                     onchange={handleCommunityMarketsChange}
                   ></lightning-input>
-                </lightning-layout-item>
-                <lightning-layout-item size="4" padding="around-small">
-                  <lightning-input
-                    data-id="community-size-input"
-                    type="number"
-                    label="Community Size per Market"
-                    value={communitySizePerMarket}
-                    min="0"
-                    step="1"
-                    onchange={handleCommunitySizeChange}
-                  ></lightning-input>
                   <p class="slds-text-body_small">
-                    {communityTierSpec.includedCommunitySize} included — $10/member
-                    over that, per market.
+                    Each additional community is 50% of the previous
+                    community&rsquo;s platform licence and 25% of its service
+                    level.
                   </p>
                 </lightning-layout-item>
-                <lightning-layout-item size="4" padding="around-small">
+              </lightning-layout>
+
+              <h4 class="slds-text-title_caps slds-m-top_small">
+                Recruitment &amp; Tagging
+              </h4>
+              <lightning-layout multiple-rows="true">
+                <lightning-layout-item size="3" padding="around-small">
+                  <lightning-input
+                    data-id="community-members-input"
+                    type="number"
+                    label="Members Recruited"
+                    value={communityMembersRecruited}
+                    min="0"
+                    step="1"
+                    onchange={handleCommunityMembersChange}
+                  ></lightning-input>
+                </lightning-layout-item>
+                <lightning-layout-item size="3" padding="around-small">
+                  <lightning-input
+                    data-id="community-cpa-input"
+                    type="number"
+                    label="Cost per Acquisition"
+                    value={communityCostPerAcquisition}
+                    min="0"
+                    step="0.01"
+                    formatter="currency"
+                    onchange={handleCommunityCostPerAcquisitionChange}
+                  ></lightning-input>
+                </lightning-layout-item>
+                <lightning-layout-item size="3" padding="around-small">
+                  <lightning-input
+                    data-id="community-briefs-input"
+                    type="number"
+                    label="Tagging Briefs"
+                    value={communityTaggingBriefs}
+                    min="0"
+                    step="1"
+                    onchange={handleCommunityTaggingBriefsChange}
+                  ></lightning-input>
+                </lightning-layout-item>
+                <lightning-layout-item size="3" padding="around-small">
+                  <lightning-input
+                    data-id="community-brief-incentive-input"
+                    type="number"
+                    label="Incentive per Brief"
+                    value={communityIncentivePerBrief}
+                    min="0"
+                    step="0.01"
+                    formatter="currency"
+                    onchange={handleCommunityIncentivePerBriefChange}
+                  ></lightning-input>
+                </lightning-layout-item>
+              </lightning-layout>
+              <p class="slds-text-body_small">
+                Default is 2 briefs at 1.00 incentive. The tagging incentive is
+                paid per member, per brief.
+              </p>
+
+              <h4 class="slds-text-title_caps slds-m-top_small">
+                DIY Incentives
+              </h4>
+              <lightning-layout multiple-rows="true">
+                <lightning-layout-item size="3" padding="around-small">
+                  <lightning-input
+                    data-id="community-diy-projects-input"
+                    type="number"
+                    label="DIY Projects per Year"
+                    value={communityDiyProjectsPerYear}
+                    min="0"
+                    step="1"
+                    onchange={handleCommunityDiyProjectsChange}
+                  ></lightning-input>
+                </lightning-layout-item>
+                <lightning-layout-item size="3" padding="around-small">
+                  <lightning-input
+                    data-id="community-diy-cost-input"
+                    type="number"
+                    label="Cost per DIY Project"
+                    value={communityDiyCostPerProject}
+                    min="0"
+                    step="0.01"
+                    formatter="currency"
+                    onchange={handleCommunityDiyCostChange}
+                  ></lightning-input>
+                </lightning-layout-item>
+              </lightning-layout>
+
+              <h4 class="slds-text-title_caps slds-m-top_small">
+                Projects Beyond the Tier Allowance
+              </h4>
+              <lightning-layout multiple-rows="true">
+                <lightning-layout-item size="3" padding="around-small">
                   <lightning-input
                     data-id="community-agile-input"
                     type="number"
@@ -518,47 +603,95 @@
                     value={communityAdditionalAgileProjects}
                     min="0"
                     step="1"
-                    disabled={communityAgileDisabled}
                     onchange={handleCommunityAgileChange}
                   ></lightning-input>
-                  <template if:true={communityAgileDisabled}>
-                    <p class="slds-text-body_small">Not available on this tier.</p>
-                  </template>
+                  <p class="slds-text-body_small">
+                    {communityAgileProjectRate} each.
+                  </p>
                 </lightning-layout-item>
-                <lightning-layout-item size="4" padding="around-small">
+                <lightning-layout-item size="3" padding="around-small">
                   <lightning-input
                     data-id="community-consultancy-input"
                     type="number"
-                    label="Additional CONSULTANCY Studies"
+                    label="Additional CONSULTANCY Projects"
                     value={communityAdditionalConsultancyProjects}
                     min="0"
                     step="1"
-                    disabled={communityConsultancyDisabled}
                     onchange={handleCommunityConsultancyChange}
                   ></lightning-input>
-                  <template if:true={communityConsultancyDisabled}>
-                    <p class="slds-text-body_small">Not available on this tier.</p>
-                  </template>
-                </lightning-layout-item>
-                <lightning-layout-item size="4" padding="around-small">
-                  <lightning-input
-                    data-id="community-admin-input"
-                    type="number"
-                    label="Additional Admin Users"
-                    value={communityAdditionalAdminUsers}
-                    min="0"
-                    step="1"
-                    disabled={communityAdminOverageDisabled}
-                    onchange={handleCommunityAdminChange}
-                  ></lightning-input>
-                  <template if:true={communityAdminOverageDisabled}>
-                    <p class="slds-text-body_small">Unlimited admins included.</p>
-                  </template>
+                  <p class="slds-text-body_small">
+                    {communityConsultancyProjectRate} each.
+                  </p>
                 </lightning-layout-item>
               </lightning-layout>
 
+              <template if:true={communityHasAdditionalMarkets}>
+                <h4 class="slds-text-title_caps slds-m-top_small">
+                  Per Additional Community
+                </h4>
+                <p class="slds-text-body_small">
+                  Recruitment and incentives are not automatically repeated for
+                  additional communities — enter them here if this deal includes
+                  them.
+                </p>
+                <lightning-layout multiple-rows="true">
+                  <lightning-layout-item size="3" padding="around-small">
+                    <lightning-input
+                      data-id="community-additional-recruitment-input"
+                      type="number"
+                      label="Recruitment &amp; Tagging"
+                      value={communityAdditionalMarketRecruitmentFee}
+                      min="0"
+                      step="0.01"
+                      formatter="currency"
+                      onchange={handleCommunityAdditionalMarketRecruitmentChange}
+                    ></lightning-input>
+                  </lightning-layout-item>
+                  <lightning-layout-item size="3" padding="around-small">
+                    <lightning-input
+                      data-id="community-additional-incentives-input"
+                      type="number"
+                      label="Incentives"
+                      value={communityAdditionalMarketIncentiveFee}
+                      min="0"
+                      step="0.01"
+                      formatter="currency"
+                      onchange={handleCommunityAdditionalMarketIncentiveChange}
+                    ></lightning-input>
+                  </lightning-layout-item>
+                </lightning-layout>
+              </template>
+
+              <table
+                data-id="community-quote-table"
+                class="slds-table slds-table_bordered slds-table_cell-buffer slds-m-top_small"
+              >
+                <thead>
+                  <tr class="slds-line-height_reset">
+                    <th scope="col">Line</th>
+                    <th scope="col">Detail</th>
+                    <th scope="col">Annual</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template for:each={communityQuoteLines} for:item="line">
+                    <tr key={line.key}>
+                      <th scope="row">{line.label}</th>
+                      <td>{line.detail}</td>
+                      <td>
+                        <lightning-formatted-number
+                          value={line.amount}
+                          format-style="currency"
+                          currency-code="USD"
+                        ></lightning-formatted-number>
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+
               <p class="slds-m-top_small">
-                Ignite Communities:
+                Total Subscription Price:
                 <strong>
                   <lightning-formatted-number
                     value={communityQuote.totalAnnual}
@@ -566,7 +699,7 @@
                     currency-code="USD"
                   ></lightning-formatted-number>
                 </strong>
-                / year ({communityTierDiscountPercentDisplay}% tier discount applied)
+                / year
               </p>
             </div>
           </template>

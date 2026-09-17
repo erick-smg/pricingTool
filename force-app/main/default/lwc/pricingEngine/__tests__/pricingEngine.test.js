@@ -263,125 +263,161 @@ describe("computeRatingsReviews", () => {
 });
 
 describe("computeCommunityQuote", () => {
-  it("matches the workbook's Advanced tier Market-1 total exactly (default size, 1 market)", () => {
-    const result = computeCommunityQuote({
-      tier: "Advanced",
-      numberOfMarkets: 1,
-      communitySizePerMarket: 2000,
-      additionalAgileProjects: 0,
-      additionalConsultancyProjects: 0,
-      additionalAdminUsers: 0
-    });
-    expect(result.totalAnnual).toBeCloseTo(217627.9, 2);
+  it("matches the workbook Starter (DIY) total subscription price", () => {
+    const result = computeCommunityQuote({ tier: "DIY", numberOfMarkets: 1 });
+    expect(result.platformFeeTotal).toBe(40000);
+    expect(result.recruitmentAndTaggingTotal).toBe(8000);
+    expect(result.incentivesTotal).toBe(4080);
+    expect(result.servicingAndSupportTotal).toBe(3750);
+    expect(result.subscriptionTierDiscount).toBe(0);
+    expect(result.totalAnnual).toBe(55830);
   });
 
-  it("matches the workbook's Elite tier Market-1 total exactly (default size, 1 market)", () => {
+  it("matches the workbook Foundation total subscription price", () => {
     const result = computeCommunityQuote({
-      tier: "Elite",
-      numberOfMarkets: 1,
-      communitySizePerMarket: 1000,
-      additionalAgileProjects: 0,
-      additionalConsultancyProjects: 0,
-      additionalAdminUsers: 0
+      tier: "Foundation",
+      numberOfMarkets: 1
     });
-    expect(result.totalAnnual).toBeCloseTo(288115.3, 2);
+    // 6 included AGILE projects at 3,750.
+    expect(result.agileProjectsTotal).toBe(22500);
+    expect(result.consultancyProjectsTotal).toBe(0);
+    expect(result.servicingAndSupportTotal).toBe(32123);
+    expect(result.subscriptionTierDiscount).toBeCloseTo(1803.08, 2);
+    expect(result.totalAnnual).toBeCloseTo(82399.92, 2);
   });
 
-  it("matches the workbook's DIY tier total exactly (no discount, no AGILE/CONSULTANCY available)", () => {
+  it("matches the workbook Advanced total subscription price", () => {
     const result = computeCommunityQuote({
-      tier: "DIY",
-      numberOfMarkets: 1,
-      communitySizePerMarket: 1000,
-      additionalAgileProjects: 5, // should have no effect - not available on this tier
-      additionalConsultancyProjects: 5, // should have no effect - not available on this tier
-      additionalAdminUsers: 0
+      tier: "Advanced",
+      numberOfMarkets: 1
     });
-    expect(result.totalAnnual).toBe(85179);
+    // 8 included AGILE at 3,750 and 4 included CONSULTANCY at 8,950.
+    expect(result.agileProjectsTotal).toBe(30000);
+    expect(result.consultancyProjectsTotal).toBe(35800);
+    expect(result.servicingAndSupportTotal).toBe(88509);
+    expect(result.subscriptionTierDiscount).toBeCloseTo(6425.45, 2);
+    expect(result.totalAnnual).toBeCloseTo(134163.55, 2);
   });
 
-  it("discounts additional markets 50% on platform fee and 75% on service fee", () => {
-    const oneMarket = computeCommunityQuote({
+  it("takes the tier discount on platform licence and servicing only, not recruitment or incentives", () => {
+    const result = computeCommunityQuote({
       tier: "Advanced",
-      numberOfMarkets: 1,
-      communitySizePerMarket: 2000
+      numberOfMarkets: 1
     });
-    const twoMarkets = computeCommunityQuote({
-      tier: "Advanced",
-      numberOfMarkets: 2,
-      communitySizePerMarket: 2000
-    });
-    // 2nd market adds: platform*0.5 (33,601) + service*0.25 (8,478.25) + recruitment (19,843)
-    const expectedSecondMarketAddOn = 33601 + 8478.25 + 19843;
-    expect(twoMarkets.totalAnnual - oneMarket.totalAnnual).toBeCloseTo(
-      expectedSecondMarketAddOn * (1 - 0.05),
+    expect(result.discountableSubtotal).toBe(
+      result.platformFeeTotal + result.servicingAndSupportTotal
+    );
+    expect(result.subscriptionTierDiscount).toBeCloseTo(
+      result.discountableSubtotal * 0.05,
       2
     );
   });
 
-  it("charges $10/member over the tier's included community size, per market", () => {
-    const atIncluded = computeCommunityQuote({
+  it("computes recruitment as members x (cost per acquisition + briefs x incentive)", () => {
+    const result = computeCommunityQuote({
       tier: "DIY",
       numberOfMarkets: 1,
-      communitySizePerMarket: 1000
+      membersRecruited: 2000,
+      costPerAcquisition: 6,
+      taggingBriefs: 2,
+      incentivePerBrief: 1
     });
-    const overIncluded = computeCommunityQuote({
-      tier: "DIY",
-      numberOfMarkets: 1,
-      communitySizePerMarket: 1200
-    });
-    expect(overIncluded.totalAnnual - atIncluded.totalAnnual).toBe(2000);
+    expect(result.recruitmentPerAcquisition).toBe(12000);
+    expect(result.taggingIncentiveTotal).toBe(4000);
+    expect(result.recruitmentAndTaggingTotal).toBe(16000);
   });
 
-  it("prices additional AGILE/CONSULTANCY projects at the tier's own reconciled rate", () => {
+  it("computes DIY incentives as projects per year x cost per project", () => {
+    const result = computeCommunityQuote({
+      tier: "DIY",
+      numberOfMarkets: 1,
+      diyProjectsPerYear: 24,
+      diyCostPerProject: 85
+    });
+    expect(result.incentivesTotal).toBe(2040);
+  });
+
+  it("halves the platform licence and quarters the service level for each further community", () => {
+    const result = computeCommunityQuote({ tier: "DIY", numberOfMarkets: 3 });
+    // 40,000 + 20,000 + 10,000
+    expect(result.platformFeeTotal).toBe(70000);
+    // 3,750 + 937.50 + 234.38
+    expect(result.serviceLevelTotal).toBeCloseTo(4921.88, 2);
+  });
+
+  it("does not repeat AGILE or CONSULTANCY project costs for additional communities", () => {
+    const oneMarket = computeCommunityQuote({
+      tier: "Advanced",
+      numberOfMarkets: 1
+    });
+    const twoMarkets = computeCommunityQuote({
+      tier: "Advanced",
+      numberOfMarkets: 2
+    });
+    expect(twoMarkets.agileProjectsTotal).toBe(oneMarket.agileProjectsTotal);
+    expect(twoMarkets.consultancyProjectsTotal).toBe(
+      oneMarket.consultancyProjectsTotal
+    );
+  });
+
+  it("leaves recruitment and incentives out of additional communities unless entered", () => {
+    const withoutEntry = computeCommunityQuote({
+      tier: "DIY",
+      numberOfMarkets: 3
+    });
+    expect(withoutEntry.recruitmentAndTaggingTotal).toBe(8000);
+    expect(withoutEntry.incentivesTotal).toBe(4080);
+
+    const withEntry = computeCommunityQuote({
+      tier: "DIY",
+      numberOfMarkets: 3,
+      additionalMarketRecruitmentFee: 5000,
+      additionalMarketIncentiveFee: 1000
+    });
+    expect(withEntry.recruitmentAndTaggingTotal).toBe(8000 + 2 * 5000);
+    expect(withEntry.incentivesTotal).toBe(4080 + 2 * 1000);
+  });
+
+  it("prices projects beyond the tier allowance at the universal AGILE and CONSULTANCY rates", () => {
     const base = computeCommunityQuote({
       tier: "Advanced",
-      numberOfMarkets: 1,
-      communitySizePerMarket: 2000
+      numberOfMarkets: 1
     });
-    const withExtraProjects = computeCommunityQuote({
+    const withExtras = computeCommunityQuote({
       tier: "Advanced",
       numberOfMarkets: 1,
-      communitySizePerMarket: 2000,
       additionalAgileProjects: 1,
       additionalConsultancyProjects: 1
     });
-    const expectedDelta = (4555 + 13366) * (1 - 0.05);
-    expect(withExtraProjects.totalAnnual - base.totalAnnual).toBeCloseTo(
+    const expectedDelta = (3750 + 8950) * (1 - 0.05);
+    expect(withExtras.totalAnnual - base.totalAnnual).toBeCloseTo(
       expectedDelta,
       2
     );
   });
 
-  it("never charges for additional admin users on the Advanced tier (unlimited included)", () => {
-    const base = computeCommunityQuote({
-      tier: "Advanced",
+  it("sells extra projects on the Starter tier even though none are included", () => {
+    const base = computeCommunityQuote({ tier: "DIY", numberOfMarkets: 1 });
+    const withExtras = computeCommunityQuote({
+      tier: "DIY",
       numberOfMarkets: 1,
-      communitySizePerMarket: 2000,
-      additionalAdminUsers: 0
+      additionalAgileProjects: 2
     });
-    const withExtraAdmins = computeCommunityQuote({
-      tier: "Advanced",
-      numberOfMarkets: 1,
-      communitySizePerMarket: 2000,
-      additionalAdminUsers: 50
-    });
-    expect(withExtraAdmins.totalAnnual).toBe(base.totalAnnual);
+    expect(withExtras.totalAnnual - base.totalAnnual).toBe(7500);
   });
 
-  it("charges $500/user for additional admin users on tiers with a finite included count", () => {
-    const base = computeCommunityQuote({
+  it("falls back to the workbook default when a calculator field is cleared", () => {
+    const cleared = computeCommunityQuote({
       tier: "DIY",
       numberOfMarkets: 1,
-      communitySizePerMarket: 1000,
-      additionalAdminUsers: 0
+      membersRecruited: "",
+      costPerAcquisition: null,
+      diyProjectsPerYear: undefined
     });
-    const withExtraAdmins = computeCommunityQuote({
-      tier: "DIY",
-      numberOfMarkets: 1,
-      communitySizePerMarket: 1000,
-      additionalAdminUsers: 3
-    });
-    expect(withExtraAdmins.totalAnnual - base.totalAnnual).toBe(1500);
+    expect(cleared.membersRecruited).toBe(1000);
+    expect(cleared.costPerAcquisition).toBe(6);
+    expect(cleared.diyProjectsPerYear).toBe(48);
+    expect(cleared.totalAnnual).toBe(55830);
   });
 
   it("throws for an unknown tier", () => {

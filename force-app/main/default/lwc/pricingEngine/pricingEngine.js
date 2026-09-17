@@ -315,102 +315,97 @@ export const MANAGED_LISTING_MANAGEMENT_REFERENCE = [
   { locations: "20,000+", premium: 14.256, pro: 7.264, basic: 5.696 }
 ];
 
-// Ignite Communities (Bulbshare) rate card - "Bulbshare USD quote builder v1" workbook.
-// Rolls up into a single Ignite Communities line item (product code IGNITE-COMMUNITIES) -
-// no separate products for platform/recruitment/service/etc.
+// Ignite Communities (Bulbshare) rate card - "Ignite Communities - Pricing Summary for
+// Erick" workbook (Summary Quote + Add. Markets Example sheets). Rolls up into a single
+// Ignite Communities line item (product code IGNITE-COMMUNITIES) - no separate products
+// for platform, recruitment, incentives or servicing.
 //
-// Each tier's fees below are reconciled from the workbook's own Market-1 total ("Total
-// Subscription Fees") minus its included AGILE/CONSULTANCY project costs, split into:
-//   platformFee               - discounted 50% for each market beyond the first
-//   serviceFee                - discounted to 25% for each market beyond the first
-//   recruitmentAndIncentiveFee - billed in full per market (real pass-through cost, not a
-//                                licence/service fee - Bulbshare always recruits the same
-//                                base 1,000 members + 25% refresh regardless of tier)
+// A community's annual subscription is built from four lines:
+//   Platform Licence      - flat per tier (40,000 on every tier in the source workbook)
+//   Recruitment & Tagging - membersRecruited x (costPerAcquisition + briefs x incentive)
+//   Incentives (DIY)      - diyProjectsPerYear x costPerProject
+//   Servicing & Support   - serviceLevelFee + AGILE projects + CONSULTANCY projects
+// less a Subscription Tier Discount that, per the workbook note, "excludes recruitment &
+// incentives" - it is taken on Platform Licence + Servicing & Support only.
 //
-// AGILE/CONSULTANCY per-project rates are tier-specific, not a single universal rate: Elite's
-// own Market-1 formula computes to $3,050/$8,950 (24 AGILE @ $3,050 = $73,200; 8 CONSULTANCY
-// @ $8,950 = $71,600) while Foundation/Advanced both reconcile to $4,555/$13,366 (Foundation:
-// 8 AGILE @ $4,555 = $36,439 rounding; Advanced: 12 @ $4,555 = $54,660, 4 @ $13,366 = $53,464).
-// Elite's lower per-project rate is a genuine bulk/enterprise discount, not a data error.
-export const COMMUNITY_TIERS = ["DIY", "Foundation", "Advanced", "Elite"];
+// AGILE and CONSULTANCY are billed at one universal rate across tiers (3,750 and 8,950);
+// a tier differs only in how many of each it includes before overage.
+//
+// NOTE ON CURRENCY: the source workbook is denominated in GBP. The figures are carried
+// over as-is into the tool's quote currency - confirm with deal desk before quoting USD.
+export const COMMUNITY_TIERS = ["DIY", "Foundation", "Advanced"];
 
 export const COMMUNITY_TIER_SPECS = {
   DIY: {
-    label: "DIY (Starter)",
-    platformFee: 59736,
-    serviceFee: 5600,
-    recruitmentAndIncentiveFee: 19843,
-    includedCommunitySize: 1000,
+    label: "Starter (DIY)",
+    platformFee: 40000,
+    serviceLevelFee: 3750,
     includedAgileProjects: 0,
-    agileProjectRate: null,
     includedConsultancyProjects: 0,
-    consultancyProjectRate: null,
-    includedAdminUsers: 5,
     tierDiscountPercent: 0
   },
   Foundation: {
     label: "Foundation",
-    platformFee: 59736,
-    serviceFee: 14371,
-    recruitmentAndIncentiveFee: 19843,
-    includedCommunitySize: 1500,
-    includedAgileProjects: 8,
-    agileProjectRate: 4555,
+    platformFee: 40000,
+    serviceLevelFee: 9623,
+    includedAgileProjects: 6,
     includedConsultancyProjects: 0,
-    consultancyProjectRate: null,
-    includedAdminUsers: 10,
     tierDiscountPercent: 0.025
   },
   Advanced: {
     label: "Advanced",
-    platformFee: 67202,
-    serviceFee: 33913,
-    recruitmentAndIncentiveFee: 19843,
-    includedCommunitySize: 2000,
-    includedAgileProjects: 12,
-    agileProjectRate: 4555,
+    platformFee: 40000,
+    serviceLevelFee: 22709,
+    includedAgileProjects: 8,
     includedConsultancyProjects: 4,
-    consultancyProjectRate: 13366,
-    includedAdminUsers: Infinity,
     tierDiscountPercent: 0.05
-  },
-  Elite: {
-    label: "Elite (Enterprise)",
-    platformFee: 67202,
-    serviceFee: 81644,
-    recruitmentAndIncentiveFee: 17830,
-    includedCommunitySize: 1000,
-    includedAgileProjects: 24,
-    agileProjectRate: 3050,
-    includedConsultancyProjects: 8,
-    consultancyProjectRate: 8950,
-    includedAdminUsers: 10,
-    tierDiscountPercent: 0.075
   }
 };
 
-// $10/member above the tier's included community size, per market, per year - the one
-// explicit surcharge rate stated anywhere in the workbook (Example/GBP sheet), in USD.
-export const COMMUNITY_SIZE_SURCHARGE_PER_MEMBER = 10;
-// $500/user/year beyond the tier's included admin users (generic DIY/Enterprise calculator
-// sheets both price additional admins this way).
-export const COMMUNITY_ADDITIONAL_ADMIN_USER_RATE = 500;
-// "Add. markets 50% discount on licence fees" / "Add. market based on 25% allocation".
+// Universal per-project rates (Summary Quote calculators) - same on every tier.
+export const COMMUNITY_AGILE_PROJECT_RATE = 3750;
+export const COMMUNITY_CONSULTANCY_PROJECT_RATE = 8950;
+
+// Recruitment & Tagging calculator defaults. The tagging incentive is paid per member per
+// brief, so the workbook's "2 briefs x 1.00" against 1,000 members is 2,000.
+export const COMMUNITY_RECRUITMENT_DEFAULTS = {
+  membersRecruited: 1000,
+  costPerAcquisition: 6,
+  taggingBriefs: 2,
+  incentivePerBrief: 1
+};
+
+// DIY incentive calculator defaults - 48 projects/year at 85 each.
+export const COMMUNITY_DIY_INCENTIVE_DEFAULTS = {
+  projectsPerYear: 48,
+  costPerProject: 85
+};
+
+// "Add. markets 50% of Base Community" (platform licence) and "25% of Base Community"
+// (service level). The Add. Markets Example sheet compounds these against the preceding
+// community rather than the first, so market 3 is 25% of market 2, and so on. Only the
+// service-level component scales - AGILE/CONSULTANCY projects are bought once.
 export const COMMUNITY_ADDITIONAL_MARKET_PLATFORM_RATE = 0.5;
 export const COMMUNITY_ADDITIONAL_MARKET_SERVICE_RATE = 0.25;
 
 /**
- * Computes the all-in annual Ignite Communities price - platform + service + recruitment
- * across every market, plus AGILE/CONSULTANCY project costs (included + overage) and any
- * admin-user overage, less the tier's fixed subscription discount.
+ * Computes the all-in annual Ignite Communities subscription across every community
+ * (market), returning the workbook's own line structure so the UI can show the seller the
+ * same breakdown that appears in the pricing summary.
  */
 export function computeCommunityQuote({
   tier,
   numberOfMarkets,
-  communitySizePerMarket,
+  membersRecruited,
+  costPerAcquisition,
+  taggingBriefs,
+  incentivePerBrief,
+  diyProjectsPerYear,
+  diyCostPerProject,
   additionalAgileProjects,
   additionalConsultancyProjects,
-  additionalAdminUsers
+  additionalMarketRecruitmentFee,
+  additionalMarketIncentiveFee
 }) {
   const spec = COMMUNITY_TIER_SPECS[tier];
   if (!spec) {
@@ -418,74 +413,138 @@ export function computeCommunityQuote({
   }
 
   const markets = Math.max(1, Number(numberOfMarkets) || 1);
-  const size = Math.max(0, Number(communitySizePerMarket) || 0);
+  const members = communityInput(
+    membersRecruited,
+    COMMUNITY_RECRUITMENT_DEFAULTS.membersRecruited
+  );
+  const cpa = communityInput(
+    costPerAcquisition,
+    COMMUNITY_RECRUITMENT_DEFAULTS.costPerAcquisition
+  );
+  const briefs = communityInput(
+    taggingBriefs,
+    COMMUNITY_RECRUITMENT_DEFAULTS.taggingBriefs
+  );
+  const briefIncentive = communityInput(
+    incentivePerBrief,
+    COMMUNITY_RECRUITMENT_DEFAULTS.incentivePerBrief
+  );
+  const diyProjects = communityInput(
+    diyProjectsPerYear,
+    COMMUNITY_DIY_INCENTIVE_DEFAULTS.projectsPerYear
+  );
+  const diyRate = communityInput(
+    diyCostPerProject,
+    COMMUNITY_DIY_INCENTIVE_DEFAULTS.costPerProject
+  );
   const extraAgile = Math.max(0, Number(additionalAgileProjects) || 0);
   const extraConsultancy = Math.max(0, Number(additionalConsultancyProjects) || 0);
-  const extraAdmins = Math.max(0, Number(additionalAdminUsers) || 0);
-
-  const sizeSurchargePerMarket = round2(
-    Math.max(0, size - spec.includedCommunitySize) *
-      COMMUNITY_SIZE_SURCHARGE_PER_MEMBER
+  const extraMarketRecruitment = Math.max(
+    0,
+    Number(additionalMarketRecruitmentFee) || 0
+  );
+  const extraMarketIncentives = Math.max(
+    0,
+    Number(additionalMarketIncentiveFee) || 0
   );
 
-  let marketsCost = 0;
+  const recruitmentPerAcquisition = round2(members * cpa);
+  const taggingIncentiveTotal = round2(members * briefs * briefIncentive);
+  const firstRecruitmentAndTagging = round2(
+    recruitmentPerAcquisition + taggingIncentiveTotal
+  );
+  const firstIncentives = round2(diyProjects * diyRate);
+
+  const agileProjects = spec.includedAgileProjects + extraAgile;
+  const consultancyProjects = spec.includedConsultancyProjects + extraConsultancy;
+  const agileProjectsTotal = round2(agileProjects * COMMUNITY_AGILE_PROJECT_RATE);
+  const consultancyProjectsTotal = round2(
+    consultancyProjects * COMMUNITY_CONSULTANCY_PROJECT_RATE
+  );
+
+  const additionalMarkets = markets - 1;
+
+  let platformFeeTotal = 0;
+  let serviceLevelTotal = 0;
   for (let i = 0; i < markets; i += 1) {
-    const isAdditionalMarket = i > 0;
-    const platformRate = isAdditionalMarket
-      ? COMMUNITY_ADDITIONAL_MARKET_PLATFORM_RATE
-      : 1;
-    const serviceRate = isAdditionalMarket
-      ? COMMUNITY_ADDITIONAL_MARKET_SERVICE_RATE
-      : 1;
-    marketsCost +=
-      round2(spec.platformFee * platformRate) +
-      round2(spec.serviceFee * serviceRate) +
-      spec.recruitmentAndIncentiveFee +
-      sizeSurchargePerMarket;
+    platformFeeTotal += round2(
+      spec.platformFee * Math.pow(COMMUNITY_ADDITIONAL_MARKET_PLATFORM_RATE, i)
+    );
+    serviceLevelTotal += round2(
+      spec.serviceLevelFee * Math.pow(COMMUNITY_ADDITIONAL_MARKET_SERVICE_RATE, i)
+    );
   }
+  platformFeeTotal = round2(platformFeeTotal);
+  serviceLevelTotal = round2(serviceLevelTotal);
 
-  const includedAgileCost = spec.agileProjectRate
-    ? spec.includedAgileProjects * spec.agileProjectRate
-    : 0;
-  const includedConsultancyCost = spec.consultancyProjectRate
-    ? spec.includedConsultancyProjects * spec.consultancyProjectRate
-    : 0;
-  const agileOverageCost = spec.agileProjectRate
-    ? extraAgile * spec.agileProjectRate
-    : 0;
-  const consultancyOverageCost = spec.consultancyProjectRate
-    ? extraConsultancy * spec.consultancyProjectRate
-    : 0;
-  const adminOverageCost = Number.isFinite(spec.includedAdminUsers)
-    ? extraAdmins * COMMUNITY_ADDITIONAL_ADMIN_USER_RATE
-    : 0;
-
-  const totalBeforeDiscount = round2(
-    marketsCost +
-      includedAgileCost +
-      includedConsultancyCost +
-      agileOverageCost +
-      consultancyOverageCost +
-      adminOverageCost
+  const recruitmentAndTaggingTotal = round2(
+    firstRecruitmentAndTagging + additionalMarkets * extraMarketRecruitment
   );
+  const incentivesTotal = round2(
+    firstIncentives + additionalMarkets * extraMarketIncentives
+  );
+  const servicingAndSupportTotal = round2(
+    serviceLevelTotal + agileProjectsTotal + consultancyProjectsTotal
+  );
+
+  // "Excludes recruitment & incentives" - the tier discount is taken on the platform
+  // licence and servicing & support lines only.
+  const discountableSubtotal = round2(platformFeeTotal + servicingAndSupportTotal);
+  const subscriptionTierDiscount = round2(
+    discountableSubtotal * spec.tierDiscountPercent
+  );
+
   const totalAnnual = round2(
-    totalBeforeDiscount * (1 - spec.tierDiscountPercent)
+    platformFeeTotal +
+      recruitmentAndTaggingTotal +
+      incentivesTotal +
+      servicingAndSupportTotal -
+      subscriptionTierDiscount
   );
 
   return {
     tier,
     label: spec.label,
     markets,
-    communitySizePerMarket: size,
+    membersRecruited: members,
+    costPerAcquisition: cpa,
+    taggingBriefs: briefs,
+    incentivePerBrief: briefIncentive,
+    diyProjectsPerYear: diyProjects,
+    diyCostPerProject: diyRate,
+    platformFeeTotal,
+    recruitmentPerAcquisition,
+    taggingIncentiveTotal,
+    recruitmentAndTaggingTotal,
+    incentivesTotal,
+    serviceLevelTotal,
+    agileProjects,
+    agileProjectsTotal,
+    consultancyProjects,
+    consultancyProjectsTotal,
+    servicingAndSupportTotal,
+    discountableSubtotal,
+    subscriptionTierDiscount,
     totalAnnual,
     tierDiscountPercent: spec.tierDiscountPercent,
-    includedCommunitySize: spec.includedCommunitySize,
     includedAgileProjects: spec.includedAgileProjects,
     includedConsultancyProjects: spec.includedConsultancyProjects,
-    includedAdminUsers: spec.includedAdminUsers,
-    agileProjectRate: spec.agileProjectRate,
-    consultancyProjectRate: spec.consultancyProjectRate
+    agileProjectRate: COMMUNITY_AGILE_PROJECT_RATE,
+    consultancyProjectRate: COMMUNITY_CONSULTANCY_PROJECT_RATE
   };
+}
+
+// Calculator inputs fall back to the workbook default when blank or negative rather than
+// to 0, so clearing a field cannot silently drop a real cost out of the quote.
+function communityInput(value, fallback) {
+  if (value === "" || value === null || value === undefined) {
+    return fallback;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return fallback;
+  }
+  return parsed;
 }
 
 // Rate card is fitted to the observed volume-discount curve and the modeled discount is
