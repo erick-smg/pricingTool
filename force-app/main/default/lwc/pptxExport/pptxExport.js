@@ -26,9 +26,23 @@ function xmlEscape(value) {
     .replace(/'/g, "&apos;");
 }
 
-function formatCurrency(value) {
+// Amounts print in the Opportunity record currency, not a hard-coded USD, so a GBP or EUR
+// deal exports a slide the customer can actually be sent. Falls back to a plain ISO-code
+// prefix if the browser rejects the currency code.
+function formatCurrency(value, currencyCode) {
   const rounded = Math.round(Number(value) || 0);
-  return `$${rounded.toLocaleString("en-US")}`;
+  const code = currencyCode || "USD";
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: code,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(rounded);
+  } catch {
+    // An unrecognized ISO code throws RangeError - fall back rather than blank the label.
+    return `${code} ${rounded.toLocaleString("en-US")}`;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -234,7 +248,7 @@ function buildSlideXml(data) {
         rowY,
         cardW * 0.29,
         rowH,
-        paragraph(run(formatCurrency(line.totalPrice), { size: fontSz, bold: true, color: "211F1B" }), {
+        paragraph(run(formatCurrency(line.totalPrice, data.currencyCode), { size: fontSz, bold: true, color: "211F1B" }), {
           align: "r"
         })
       )
@@ -247,11 +261,11 @@ function buildSlideXml(data) {
   // Summary rows.
   const sumY = cardY + cardH + 0.22;
   shapes.push(
-    ...summaryRow(nextId, cardX, sumY, cardW, "RECURRING ANNUAL", formatCurrency(data.recurringTotal), "EFECE5", "2F6F62")
+    ...summaryRow(nextId, cardX, sumY, cardW, "RECURRING ANNUAL", formatCurrency(data.recurringTotal, data.currencyCode), "EFECE5", "2F6F62")
   );
   const grandLabel = Number(data.discountPercent) > 0 ? "GRAND TOTAL (DISCOUNTED, YEAR 1)" : "GRAND TOTAL (YEAR 1)";
   shapes.push(
-    ...summaryRow(nextId, cardX, sumY + 0.64, cardW, grandLabel, formatCurrency(data.grandTotal), "E4EFEC", "2F6F62")
+    ...summaryRow(nextId, cardX, sumY + 0.64, cardW, grandLabel, formatCurrency(data.grandTotal, data.currencyCode), "E4EFEC", "2F6F62")
   );
 
   // Footer.

@@ -737,6 +737,136 @@ describe("c-pricing-tool", () => {
     ).not.toBeNull();
   });
 
+  it("formats every quoted amount in USD until the Opportunity says otherwise", async () => {
+    const element = createTool();
+    await flush();
+
+    const formatted = Array.from(
+      element.shadowRoot.querySelectorAll("lightning-formatted-number")
+    ).filter((el) => el.formatStyle === "currency");
+    expect(formatted.length).toBeGreaterThan(0);
+    formatted.forEach((el) => expect(el.currencyCode).toBe("USD"));
+  });
+
+  it("switches every quoted amount to the Opportunity's currency", async () => {
+    const element = createTool();
+    element.recordId = "006000000000001AAA";
+    await flush();
+
+    getRecord.emit({
+      fields: {
+        Type: { value: "Existing Customer" },
+        Term_Length__c: { value: null },
+        Discount__c: { value: null },
+        Number_of_Locations__c: { value: null },
+        CurrencyIsoCode: { value: "GBP" }
+      }
+    });
+    await flush();
+
+    const formatted = Array.from(
+      element.shadowRoot.querySelectorAll("lightning-formatted-number")
+    ).filter((el) => el.formatStyle === "currency");
+    expect(formatted.length).toBeGreaterThan(0);
+    formatted.forEach((el) => expect(el.currencyCode).toBe("GBP"));
+  });
+
+  it("prices the add-on labels in the Opportunity's currency", async () => {
+    const element = createTool();
+    element.recordId = "006000000000001AAA";
+    await flush();
+
+    const surveysInput = element.shadowRoot.querySelector(
+      '[data-field="additionalSurveys"]'
+    );
+    expect(surveysInput.label).toBe("Add'l Surveys ($30,000/survey)");
+
+    getRecord.emit({
+      fields: {
+        Type: { value: "Existing Customer" },
+        Term_Length__c: { value: null },
+        Discount__c: { value: null },
+        Number_of_Locations__c: { value: null },
+        CurrencyIsoCode: { value: "EUR" }
+      }
+    });
+    await flush();
+
+    expect(surveysInput.label).toContain("30,000");
+    expect(surveysInput.label).not.toContain("$");
+    expect(
+      element.shadowRoot.querySelector('[data-id="case-management-toggle"]')
+        .label
+    ).not.toContain("$");
+  });
+
+  it("passes the Opportunity currency through to the PowerPoint export", async () => {
+    const element = createTool();
+    element.recordId = "006000000000001AAA";
+    await flush();
+
+    getRecord.emit({
+      fields: {
+        Type: { value: "Existing Customer" },
+        Term_Length__c: { value: null },
+        Discount__c: { value: null },
+        Number_of_Locations__c: { value: null },
+        CurrencyIsoCode: { value: "CAD" }
+      }
+    });
+    await flush();
+
+    element.shadowRoot
+      .querySelector('[data-id="export-pptx-button"]')
+      .dispatchEvent(new CustomEvent("click"));
+    await flush();
+
+    expect(exportQuoteToPowerPoint).toHaveBeenCalled();
+    const payload = exportQuoteToPowerPoint.mock.calls.slice(-1)[0][0];
+    expect(payload.currencyCode).toBe("CAD");
+  });
+
+  it("labels the Communities money inputs with the Opportunity currency instead of a formatter", async () => {
+    const element = createTool();
+    element.recordId = "006000000000001AAA";
+    await flush();
+
+    getRecord.emit({
+      fields: {
+        Type: { value: "Existing Customer" },
+        Term_Length__c: { value: null },
+        Discount__c: { value: null },
+        Number_of_Locations__c: { value: null },
+        CurrencyIsoCode: { value: "GBP" }
+      }
+    });
+    await flush();
+
+    const igniteCommunitiesToggle = element.shadowRoot.querySelector(
+      '[data-id="ignite-communities-toggle"]'
+    );
+    igniteCommunitiesToggle.checked = true;
+    igniteCommunitiesToggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const cpaInput = element.shadowRoot.querySelector(
+      '[data-id="community-cpa-input"]'
+    );
+    expect(cpaInput.label).toBe("Cost per Acquisition (GBP)");
+    // The lightning-input currency formatter always renders the viewer locale currency,
+    // so none of these fields may set it.
+    expect(cpaInput.formatter).toBeUndefined();
+    expect(
+      element.shadowRoot.querySelector('[data-id="community-diy-cost-input"]')
+        .label
+    ).toBe("Cost per DIY Project (GBP)");
+    expect(
+      element.shadowRoot.querySelector(
+        '[data-id="community-brief-incentive-input"]'
+      ).label
+    ).toBe("Incentive per Brief (GBP)");
+  });
+
   it("always shows the base package line in the Quote Summary, even with nothing else toggled on", async () => {
     const element = createTool();
     await flush();

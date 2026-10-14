@@ -6,6 +6,7 @@ import OPPORTUNITY_TYPE_FIELD from "@salesforce/schema/Opportunity.Type";
 import TERM_LENGTH_FIELD from "@salesforce/schema/Opportunity.Term_Length__c";
 import DISCOUNT_FIELD from "@salesforce/schema/Opportunity.Discount__c";
 import NUMBER_OF_LOCATIONS_FIELD from "@salesforce/schema/Opportunity.Number_of_Locations__c";
+import CURRENCY_FIELD from "@salesforce/schema/Opportunity.CurrencyIsoCode";
 import syncLineItems from "@salesforce/apex/PricingToolController.syncLineItems";
 import getExistingLineItems from "@salesforce/apex/PricingToolController.getExistingLineItems";
 import {
@@ -16,6 +17,9 @@ import {
   RATINGS_REVIEWS_TIER_LABELS,
   MANAGED_LISTING_MANAGEMENT_REFERENCE,
   CASE_MANAGEMENT_FEE,
+  ADD_ON_RATES,
+  IGNITE_DIGITAL_MOUSEFLOW_FEE_BY_TIER,
+  IGNITE_DIGITAL_CONTACT_US_FEE,
   COMMUNITY_TIERS,
   COMMUNITY_TIER_SPECS,
   COMMUNITY_RECRUITMENT_DEFAULTS,
@@ -49,6 +53,28 @@ const AGENT_TRACK_LABELS = {
 
 function round2(value) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+// The Opportunity's own currency, used whenever an amount is baked into a label rather than
+// rendered by lightning-formatted-number. Falls back to a plain grouped number if the browser
+// rejects the ISO code, so an unexpected currency can never blank out a label.
+const DEFAULT_CURRENCY_CODE = "USD";
+
+function formatCurrencyAmount(value, currencyCode) {
+  const amount = Number(value) || 0;
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currencyCode || DEFAULT_CURRENCY_CODE,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(amount);
+  } catch {
+    // An unrecognized ISO code throws RangeError - fall back rather than blank the label.
+    return `${currencyCode || DEFAULT_CURRENCY_CODE} ${Math.round(
+      amount
+    ).toLocaleString()}`;
+  }
 }
 
 // Foundational/Advanced reuse the product codes from the former Standard/Foundational and
@@ -329,6 +355,7 @@ export default class PricingTool extends LightningElement {
   setupFeeDefaultApplied = false;
   prefillApplied = false;
   opportunityFieldsPrefillApplied = false;
+  currencyCode = DEFAULT_CURRENCY_CODE;
 
   communityTier = "DIY";
   communityMarkets = 1;
@@ -353,7 +380,8 @@ export default class PricingTool extends LightningElement {
       OPPORTUNITY_TYPE_FIELD,
       TERM_LENGTH_FIELD,
       DISCOUNT_FIELD,
-      NUMBER_OF_LOCATIONS_FIELD
+      NUMBER_OF_LOCATIONS_FIELD,
+      CURRENCY_FIELD
     ]
   })
   wiredOpportunity({ data }) {
@@ -362,6 +390,11 @@ export default class PricingTool extends LightningElement {
     }
 
     this.opportunityType = getFieldValue(data, OPPORTUNITY_TYPE_FIELD) || "";
+    // Every amount in the tool is displayed in the Opportunity record currency. The engine
+    // rates are not converted - they are the rate card in whatever currency the deal is
+    // written in, matching the per-currency PricebookEntry rows the controller syncs to.
+    this.currencyCode =
+      getFieldValue(data, CURRENCY_FIELD) || DEFAULT_CURRENCY_CODE;
 
     if (!this.setupFeeDefaultApplied) {
       this.setupFeeDefaultApplied = true;
@@ -547,14 +580,6 @@ export default class PricingTool extends LightningElement {
     return this.communityMarkets > 1;
   }
 
-  get communityAgileProjectRate() {
-    return COMMUNITY_AGILE_PROJECT_RATE;
-  }
-
-  get communityConsultancyProjectRate() {
-    return COMMUNITY_CONSULTANCY_PROJECT_RATE;
-  }
-
   get communityIncludedProjectsSummary() {
     const spec = this.communityTierSpec;
     return `${spec.includedAgileProjects} AGILE and ${spec.includedConsultancyProjects} CONSULTANCY projects included on this tier.`;
@@ -718,7 +743,89 @@ export default class PricingTool extends LightningElement {
   }
 
   get setupFeeLabel() {
-    return `One-Time Setup Fee ($${this.setupFeeAmount.toLocaleString()})`;
+    return `One-Time Setup Fee (${this.formatCurrency(this.setupFeeAmount)})`;
+  }
+
+  formatCurrency(value) {
+    return formatCurrencyAmount(value, this.currencyCode);
+  }
+
+  // Add-on rates are shown in the field label so a seller sees the price without adding the
+  // line first. Built here rather than hard-coded in the template so they follow both the
+  // rate card and the Opportunity's currency.
+  get addOnLabels() {
+    const money = (value) => this.formatCurrency(value);
+    return {
+      additionalLanguages: `Add'l Languages (${money(
+        ADD_ON_RATES.additionalLanguageSurveys
+      )} survey + ${money(
+        ADD_ON_RATES.additionalLanguageReports
+      )} report per language)`,
+      additionalSurveys: `Add'l Surveys (${money(
+        ADD_ON_RATES.additionalSurveys
+      )}/survey)`,
+      additionalSurveyRevisions: `Add'l Survey Revisions (${money(
+        ADD_ON_RATES.additionalSurveyRevisions
+      )}/revision)`,
+      additionalIntegrations: `Add'l Integrations (${money(
+        ADD_ON_RATES.additionalIntegrations
+      )}/integration)`,
+      additionalBrands: `Add'l Brands (${money(ADD_ON_RATES.additionalBrands)}/brand)`,
+      additionalPerformance: `Add'l Performance (${money(
+        ADD_ON_RATES.additionalPerformance
+      )}/unit)`,
+      additionalAgile: `Add'l Agile (${money(ADD_ON_RATES.additionalAgile)}/unit)`,
+      additionalConsultative: `Add'l Consultative (${money(
+        ADD_ON_RATES.additionalConsultative
+      )}/unit)`
+    };
+  }
+
+  get casePremiumLabel() {
+    return `Case Premium (${this.formatCurrency(CASE_MANAGEMENT_FEE)} one-time)`;
+  }
+
+  get igniteDigitalPricingNote() {
+    const money = (value) => this.formatCurrency(value);
+    return (
+      `Mouseflow Config is priced by its own tier \u2014 ${money(
+        IGNITE_DIGITAL_MOUSEFLOW_FEE_BY_TIER.Essential
+      )} Essential / ${money(
+        IGNITE_DIGITAL_MOUSEFLOW_FEE_BY_TIER.Advanced
+      )} Advanced / ${money(
+        IGNITE_DIGITAL_MOUSEFLOW_FEE_BY_TIER.Elite
+      )} Elite \u2014 independent of the quote's Service Tier. ` +
+      `Contact Us (Inform) is a flat ${money(IGNITE_DIGITAL_CONTACT_US_FEE)}/year.`
+    );
+  }
+
+  // lightning-input's currency formatter always renders the viewer's locale currency and
+  // takes no override, so these money fields carry no formatter and name the Opportunity
+  // currency in the label instead.
+  get communityMoneyLabels() {
+    const code = this.currencyCode;
+    return {
+      costPerAcquisition: `Cost per Acquisition (${code})`,
+      incentivePerBrief: `Incentive per Brief (${code})`,
+      diyCostPerProject: `Cost per DIY Project (${code})`,
+      additionalMarketRecruitment: `Recruitment & Tagging (${code})`,
+      additionalMarketIncentives: `Incentives (${code})`
+    };
+  }
+
+  get communityTaggingNote() {
+    return `Default is 2 briefs at ${formatCurrencyAmount(
+      1,
+      this.currencyCode
+    ).replace(/\u00a0/g, " ")} incentive. The tagging incentive is paid per member, per brief.`;
+  }
+
+  get communityAgileProjectRateLabel() {
+    return `${this.formatCurrency(COMMUNITY_AGILE_PROJECT_RATE)} each.`;
+  }
+
+  get communityConsultancyProjectRateLabel() {
+    return `${this.formatCurrency(COMMUNITY_CONSULTANCY_PROJECT_RATE)} each.`;
   }
 
   // The full list-price (pre-discount) recurring total across every product in the quote. The
@@ -1302,6 +1409,7 @@ export default class PricingTool extends LightningElement {
         lines: this.lineItemsForDisplay,
         recurringTotal: this.recurringLineItemsTotal,
         grandTotal: this.lineItemsGrandTotal,
+        currencyCode: this.currencyCode,
         fileName: `SMG Pricing Quote - ${this.locations} locations.pptx`
       });
     } catch (error) {
