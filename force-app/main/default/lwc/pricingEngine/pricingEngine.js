@@ -151,6 +151,48 @@ export const ADD_ON_RATES = {
   additionalConsultative: 35000
 };
 
+// SMS Survey Invite. The base fee covers the first 100,000 invites in a month; past that,
+// every further block of 50,000 invites (or any part of one) adds its own monthly fee. Both
+// fees are monthly, so the annual price is twelve times the monthly total.
+export const SMS_SURVEY_INVITE = {
+  baseMonthlyFee: 1000,
+  includedMonthlyInvites: 100000,
+  overageBlockInvites: 50000,
+  overageBlockMonthlyFee: 600
+};
+
+/**
+ * Prices SMS Survey Invite from the monthly invite volume. Overage blocks are charged whole:
+ * 100,001 invites costs the same as 150,000, because a partial block still bills in full.
+ */
+export function computeSmsSurveyInvites(monthlyInvites) {
+  const invites = Math.max(0, Number(monthlyInvites) || 0);
+  const overageInvites = Math.max(
+    0,
+    invites - SMS_SURVEY_INVITE.includedMonthlyInvites
+  );
+  const overageBlocks = Math.ceil(
+    overageInvites / SMS_SURVEY_INVITE.overageBlockInvites
+  );
+  const baseMonthly = SMS_SURVEY_INVITE.baseMonthlyFee;
+  const overageMonthly = round2(
+    overageBlocks * SMS_SURVEY_INVITE.overageBlockMonthlyFee
+  );
+  const monthlyTotal = round2(baseMonthly + overageMonthly);
+
+  return {
+    monthlyInvites: invites,
+    includedMonthlyInvites: SMS_SURVEY_INVITE.includedMonthlyInvites,
+    overageInvites,
+    overageBlocks,
+    overageBlockInvites: SMS_SURVEY_INVITE.overageBlockInvites,
+    baseMonthly,
+    overageMonthly,
+    monthlyTotal,
+    annualTotal: round2(monthlyTotal * 12)
+  };
+}
+
 // Rate Card sheet, row 23 - Case management build, one-time.
 export const CASE_MANAGEMENT_FEE = 7500;
 
@@ -331,11 +373,21 @@ export const MANAGED_LISTING_MANAGEMENT_REFERENCE = [
 // AGILE and CONSULTANCY are billed at one universal rate across tiers (3,750 and 8,950);
 // a tier differs only in how many of each it includes before overage.
 //
-// NOTE ON CURRENCY: the source workbook is denominated in GBP. The figures are carried
-// over as-is into the tool's quote currency - confirm with deal desk before quoting USD.
+// CURRENCY: the source workbook is denominated in GBP, while every other rate in this module
+// is USD. The GBP figures are kept below exactly as the workbook states them, and converted
+// once here so that the rest of the module - and the whole pricing tool - is uniformly USD.
+// The rate is the inverse of the Salesforce GBP conversion rate (0.757576 GBP per USD).
+export const COMMUNITY_SOURCE_CURRENCY = "GBP";
+export const COMMUNITY_GBP_TO_USD_RATE = 1.32;
+
+function gbpToUsd(gbpAmount) {
+  return round2(gbpAmount * COMMUNITY_GBP_TO_USD_RATE);
+}
+
 export const COMMUNITY_TIERS = ["DIY", "Foundation", "Advanced"];
 
-export const COMMUNITY_TIER_SPECS = {
+// Workbook figures, in GBP, exactly as the pricing summary states them.
+export const COMMUNITY_TIER_SPECS_GBP = {
   DIY: {
     label: "Starter (DIY)",
     platformFee: 40000,
@@ -362,23 +414,36 @@ export const COMMUNITY_TIER_SPECS = {
   }
 };
 
+// The same tiers in USD - what every caller actually prices against.
+export const COMMUNITY_TIER_SPECS = Object.fromEntries(
+  Object.entries(COMMUNITY_TIER_SPECS_GBP).map(([tier, spec]) => [
+    tier,
+    {
+      ...spec,
+      platformFee: gbpToUsd(spec.platformFee),
+      serviceLevelFee: gbpToUsd(spec.serviceLevelFee)
+    }
+  ])
+);
+
 // Universal per-project rates (Summary Quote calculators) - same on every tier.
-export const COMMUNITY_AGILE_PROJECT_RATE = 3750;
-export const COMMUNITY_CONSULTANCY_PROJECT_RATE = 8950;
+// GBP 3,750 and GBP 8,950 in the workbook.
+export const COMMUNITY_AGILE_PROJECT_RATE = gbpToUsd(3750);
+export const COMMUNITY_CONSULTANCY_PROJECT_RATE = gbpToUsd(8950);
 
 // Recruitment & Tagging calculator defaults. The tagging incentive is paid per member per
-// brief, so the workbook's "2 briefs x 1.00" against 1,000 members is 2,000.
+// brief, so the workbook's "2 briefs x GBP 1.00" against 1,000 members is GBP 2,000.
 export const COMMUNITY_RECRUITMENT_DEFAULTS = {
   membersRecruited: 1000,
-  costPerAcquisition: 6,
+  costPerAcquisition: gbpToUsd(6),
   taggingBriefs: 2,
-  incentivePerBrief: 1
+  incentivePerBrief: gbpToUsd(1)
 };
 
-// DIY incentive calculator defaults - 48 projects/year at 85 each.
+// DIY incentive calculator defaults - 48 projects/year at GBP 85 each.
 export const COMMUNITY_DIY_INCENTIVE_DEFAULTS = {
   projectsPerYear: 48,
-  costPerProject: 85
+  costPerProject: gbpToUsd(85)
 };
 
 // "Add. markets 50% of Base Community" (platform licence) and "25% of Base Community"

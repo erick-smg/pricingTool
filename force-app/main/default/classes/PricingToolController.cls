@@ -31,6 +31,28 @@ public with sharing class PricingToolController {
   }
 
   /**
+   * Active currency conversion rates, keyed by ISO code, as maintained under Setup > Company
+   * Information > Manage Currencies. Each rate is the number of units of that currency per one
+   * unit of the corporate currency, so a USD rate card converts to the Opportunity currency by
+   * multiplying. The corporate currency itself is always 1.
+   *
+   * Dated exchange rates (Advanced Currency Management) are deliberately not used: a quote is
+   * priced at today's rate, not at the rate on the Opportunity close date.
+   */
+  @AuraEnabled(cacheable=true)
+  public static Map<String, Decimal> getCurrencyConversionRates() {
+    Map<String, Decimal> ratesByIsoCode = new Map<String, Decimal>();
+    for (CurrencyType currencyType : [
+      SELECT IsoCode, ConversionRate
+      FROM CurrencyType
+      WHERE IsActive = TRUE
+    ]) {
+      ratesByIsoCode.put(currencyType.IsoCode, currencyType.ConversionRate);
+    }
+    return ratesByIsoCode;
+  }
+
+  /**
    * Reads back this Opportunity's current SMG Price Book line items, if any, so the LWC can
    * pre-fill the Quote Builder from the Opportunity's existing configuration. Returns an empty
    * list (not an error) whenever there's nothing to pre-fill from - a brand new Opportunity, or

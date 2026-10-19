@@ -6,6 +6,8 @@ import {
   computeCallCenter,
   computeRatingsReviews,
   computeCommunityQuote,
+  computeSmsSurveyInvites,
+  COMMUNITY_GBP_TO_USD_RATE,
   computeIgniteEx,
   computeIgniteDigitalExtras,
   getDiscountGuidance,
@@ -262,15 +264,75 @@ describe("computeRatingsReviews", () => {
   });
 });
 
+describe("computeSmsSurveyInvites", () => {
+  it("charges only the base monthly fee up to the included volume", () => {
+    [0, 1, 50000, 100000].forEach((invites) => {
+      const result = computeSmsSurveyInvites(invites);
+      expect(result.overageBlocks).toBe(0);
+      expect(result.monthlyTotal).toBe(1000);
+      expect(result.annualTotal).toBe(12000);
+    });
+  });
+
+  it("bills a whole overage block the moment the included volume is passed", () => {
+    const result = computeSmsSurveyInvites(100001);
+    expect(result.overageInvites).toBe(1);
+    expect(result.overageBlocks).toBe(1);
+    expect(result.monthlyTotal).toBe(1600);
+    expect(result.annualTotal).toBe(19200);
+  });
+
+  it("does not charge a second block until the first is used up", () => {
+    expect(computeSmsSurveyInvites(150000).monthlyTotal).toBe(1600);
+    expect(computeSmsSurveyInvites(150001).monthlyTotal).toBe(2200);
+  });
+
+  it("scales the block fee with volume", () => {
+    const result = computeSmsSurveyInvites(300000);
+    expect(result.overageBlocks).toBe(4);
+    expect(result.monthlyTotal).toBe(3400);
+    expect(result.annualTotal).toBe(40800);
+  });
+
+  it("treats a blank or negative volume as zero invites", () => {
+    expect(computeSmsSurveyInvites("").monthlyTotal).toBe(1000);
+    expect(computeSmsSurveyInvites(-500).monthlyInvites).toBe(0);
+  });
+});
+
 describe("computeCommunityQuote", () => {
-  it("matches the workbook Starter (DIY) total subscription price", () => {
+  // The workbook is in GBP; the engine converts it once to USD at 1.32 so that every rate in
+  // the module is USD. Each expectation below is the workbook figure times that rate, and the
+  // round-trip back to GBP is asserted at the end of this block.
+  it("matches the workbook Starter (DIY) total subscription price, converted to USD", () => {
     const result = computeCommunityQuote({ tier: "DIY", numberOfMarkets: 1 });
-    expect(result.platformFeeTotal).toBe(40000);
-    expect(result.recruitmentAndTaggingTotal).toBe(8000);
-    expect(result.incentivesTotal).toBe(4080);
-    expect(result.servicingAndSupportTotal).toBe(3750);
+    expect(result.platformFeeTotal).toBe(52800);
+    expect(result.recruitmentAndTaggingTotal).toBe(10560);
+    expect(result.incentivesTotal).toBe(5385.6);
+    expect(result.servicingAndSupportTotal).toBe(4950);
     expect(result.subscriptionTierDiscount).toBe(0);
-    expect(result.totalAnnual).toBe(55830);
+    expect(result.totalAnnual).toBe(73695.6);
+  });
+
+  it("round-trips each tier total back to the workbook GBP figure", () => {
+    expect(
+      Math.round(
+        computeCommunityQuote({ tier: "DIY", numberOfMarkets: 1 }).totalAnnual /
+          COMMUNITY_GBP_TO_USD_RATE
+      )
+    ).toBe(55830);
+    expect(
+      Math.round(
+        computeCommunityQuote({ tier: "Foundation", numberOfMarkets: 1 })
+          .totalAnnual / COMMUNITY_GBP_TO_USD_RATE
+      )
+    ).toBe(82400);
+    expect(
+      Math.round(
+        computeCommunityQuote({ tier: "Advanced", numberOfMarkets: 1 })
+          .totalAnnual / COMMUNITY_GBP_TO_USD_RATE
+      )
+    ).toBe(134164);
   });
 
   it("matches the workbook Foundation total subscription price", () => {
@@ -278,12 +340,12 @@ describe("computeCommunityQuote", () => {
       tier: "Foundation",
       numberOfMarkets: 1
     });
-    // 6 included AGILE projects at 3,750.
-    expect(result.agileProjectsTotal).toBe(22500);
+    // 6 included AGILE projects at GBP 3,750 / USD 4,950.
+    expect(result.agileProjectsTotal).toBe(29700);
     expect(result.consultancyProjectsTotal).toBe(0);
-    expect(result.servicingAndSupportTotal).toBe(32123);
-    expect(result.subscriptionTierDiscount).toBeCloseTo(1803.08, 2);
-    expect(result.totalAnnual).toBeCloseTo(82399.92, 2);
+    expect(result.servicingAndSupportTotal).toBe(42402.36);
+    expect(result.subscriptionTierDiscount).toBeCloseTo(2380.06, 2);
+    expect(result.totalAnnual).toBeCloseTo(108767.9, 2);
   });
 
   it("matches the workbook Advanced total subscription price", () => {
@@ -291,12 +353,12 @@ describe("computeCommunityQuote", () => {
       tier: "Advanced",
       numberOfMarkets: 1
     });
-    // 8 included AGILE at 3,750 and 4 included CONSULTANCY at 8,950.
-    expect(result.agileProjectsTotal).toBe(30000);
-    expect(result.consultancyProjectsTotal).toBe(35800);
-    expect(result.servicingAndSupportTotal).toBe(88509);
-    expect(result.subscriptionTierDiscount).toBeCloseTo(6425.45, 2);
-    expect(result.totalAnnual).toBeCloseTo(134163.55, 2);
+    // 8 included AGILE at USD 4,950 and 4 included CONSULTANCY at USD 11,814.
+    expect(result.agileProjectsTotal).toBe(39600);
+    expect(result.consultancyProjectsTotal).toBe(47256);
+    expect(result.servicingAndSupportTotal).toBe(116831.88);
+    expect(result.subscriptionTierDiscount).toBeCloseTo(8481.59, 2);
+    expect(result.totalAnnual).toBeCloseTo(177095.89, 2);
   });
 
   it("takes the tier discount on platform licence and servicing only, not recruitment or incentives", () => {
@@ -339,10 +401,10 @@ describe("computeCommunityQuote", () => {
 
   it("halves the platform licence and quarters the service level for each further community", () => {
     const result = computeCommunityQuote({ tier: "DIY", numberOfMarkets: 3 });
-    // 40,000 + 20,000 + 10,000
-    expect(result.platformFeeTotal).toBe(70000);
-    // 3,750 + 937.50 + 234.38
-    expect(result.serviceLevelTotal).toBeCloseTo(4921.88, 2);
+    // 52,800 + 26,400 + 13,200
+    expect(result.platformFeeTotal).toBe(92400);
+    // 4,950 + 1,237.50 + 309.38
+    expect(result.serviceLevelTotal).toBeCloseTo(6496.88, 2);
   });
 
   it("does not repeat AGILE or CONSULTANCY project costs for additional communities", () => {
@@ -365,8 +427,8 @@ describe("computeCommunityQuote", () => {
       tier: "DIY",
       numberOfMarkets: 3
     });
-    expect(withoutEntry.recruitmentAndTaggingTotal).toBe(8000);
-    expect(withoutEntry.incentivesTotal).toBe(4080);
+    expect(withoutEntry.recruitmentAndTaggingTotal).toBe(10560);
+    expect(withoutEntry.incentivesTotal).toBe(5385.6);
 
     const withEntry = computeCommunityQuote({
       tier: "DIY",
@@ -374,8 +436,8 @@ describe("computeCommunityQuote", () => {
       additionalMarketRecruitmentFee: 5000,
       additionalMarketIncentiveFee: 1000
     });
-    expect(withEntry.recruitmentAndTaggingTotal).toBe(8000 + 2 * 5000);
-    expect(withEntry.incentivesTotal).toBe(4080 + 2 * 1000);
+    expect(withEntry.recruitmentAndTaggingTotal).toBe(10560 + 2 * 5000);
+    expect(withEntry.incentivesTotal).toBe(5385.6 + 2 * 1000);
   });
 
   it("prices projects beyond the tier allowance at the universal AGILE and CONSULTANCY rates", () => {
@@ -389,7 +451,7 @@ describe("computeCommunityQuote", () => {
       additionalAgileProjects: 1,
       additionalConsultancyProjects: 1
     });
-    const expectedDelta = (3750 + 8950) * (1 - 0.05);
+    const expectedDelta = (4950 + 11814) * (1 - 0.05);
     expect(withExtras.totalAnnual - base.totalAnnual).toBeCloseTo(
       expectedDelta,
       2
@@ -403,7 +465,7 @@ describe("computeCommunityQuote", () => {
       numberOfMarkets: 1,
       additionalAgileProjects: 2
     });
-    expect(withExtras.totalAnnual - base.totalAnnual).toBe(7500);
+    expect(withExtras.totalAnnual - base.totalAnnual).toBe(9900);
   });
 
   it("falls back to the workbook default when a calculator field is cleared", () => {
@@ -415,9 +477,9 @@ describe("computeCommunityQuote", () => {
       diyProjectsPerYear: undefined
     });
     expect(cleared.membersRecruited).toBe(1000);
-    expect(cleared.costPerAcquisition).toBe(6);
+    expect(cleared.costPerAcquisition).toBe(7.92);
     expect(cleared.diyProjectsPerYear).toBe(48);
-    expect(cleared.totalAnnual).toBe(55830);
+    expect(cleared.totalAnnual).toBe(73695.6);
   });
 
   it("throws for an unknown tier", () => {

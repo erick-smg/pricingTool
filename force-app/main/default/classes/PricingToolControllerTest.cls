@@ -358,4 +358,28 @@ private class PricingToolControllerTest {
 
     System.assertEquals(0, results.size());
   }
+
+  @isTest
+  static void getCurrencyConversionRates_returnsActiveRatesIncludingCorporate() {
+    Map<String, Decimal> rates = PricingToolController.getCurrencyConversionRates();
+
+    System.assert(
+      !rates.isEmpty(),
+      'Expected at least the corporate currency to come back from CurrencyType.'
+    );
+
+    String corporateIsoCode = UserInfo.getDefaultCurrency();
+    System.assert(
+      rates.containsKey(corporateIsoCode),
+      'The running user currency (' + corporateIsoCode + ') should always have a rate.'
+    );
+
+    for (String isoCode : rates.keySet()) {
+      System.assertNotEquals(null, rates.get(isoCode), isoCode + ' has a null rate.');
+      System.assert(
+        rates.get(isoCode) > 0,
+        isoCode + ' has a non-positive rate: ' + rates.get(isoCode)
+      );
+    }
+  }
 }

@@ -9,6 +9,7 @@ import NUMBER_OF_LOCATIONS_FIELD from "@salesforce/schema/Opportunity.Number_of_
 import CURRENCY_FIELD from "@salesforce/schema/Opportunity.CurrencyIsoCode";
 import syncLineItems from "@salesforce/apex/PricingToolController.syncLineItems";
 import getExistingLineItems from "@salesforce/apex/PricingToolController.getExistingLineItems";
+import getCurrencyConversionRates from "@salesforce/apex/PricingToolController.getCurrencyConversionRates";
 import {
   SERVICE_TIERS,
   TERM_OPTIONS,
@@ -20,6 +21,7 @@ import {
   ADD_ON_RATES,
   IGNITE_DIGITAL_MOUSEFLOW_FEE_BY_TIER,
   IGNITE_DIGITAL_CONTACT_US_FEE,
+  SMS_SURVEY_INVITE,
   COMMUNITY_TIERS,
   COMMUNITY_TIER_SPECS,
   COMMUNITY_RECRUITMENT_DEFAULTS,
@@ -40,6 +42,7 @@ import {
   computeCommunityQuote,
   computeIgniteEx,
   computeIgniteDigitalExtras,
+  computeSmsSurveyInvites,
   getDiscountGuidance
 } from "c/pricingEngine";
 import { exportQuoteToPowerPoint } from "c/pptxExport";
@@ -59,6 +62,54 @@ function round2(value) {
 // rendered by lightning-formatted-number. Falls back to a plain grouped number if the browser
 // rejects the ISO code, so an unexpected currency can never blank out a label.
 const DEFAULT_CURRENCY_CODE = "USD";
+
+// Every rate in c/pricingEngine is USD. These are the fields in an engine result that hold a
+// money amount and therefore need converting into the Opportunity currency; everything else a
+// result carries (quantities, counts, band labels, percentages) is left untouched. Keeping
+// this as an explicit allowlist is deliberate - a blanket "convert every number" would quietly
+// corrupt counts like markets, agents or overage blocks.
+const MONEY_FIELDS = new Set([
+  "listRatePerLocationPerMonth",
+  "pricePerLocationPerMonth",
+  "totalMonthly",
+  "totalAnnual",
+  "annualTotal",
+  "oneTimeTotal",
+  "perLocPerMonth",
+  "pricePerAgent",
+  "ratePerMonth",
+  "monthly",
+  "annual",
+  "unitPrice",
+  "totalPrice",
+  "amount",
+  "year1",
+  "year2",
+  "year3",
+  "threeYearTotal",
+  "monthlyTotal",
+  "baseMonthly",
+  "overageMonthly",
+  "platformFeeTotal",
+  "recruitmentPerAcquisition",
+  "taggingIncentiveTotal",
+  "recruitmentAndTaggingTotal",
+  "incentivesTotal",
+  "serviceLevelTotal",
+  "agileProjectsTotal",
+  "consultancyProjectsTotal",
+  "servicingAndSupportTotal",
+  "discountableSubtotal",
+  "subscriptionTierDiscount",
+  "agileProjectRate",
+  "consultancyProjectRate",
+  "costPerAcquisition",
+  "incentivePerBrief",
+  "diyCostPerProject",
+  "premium",
+  "pro",
+  "basic"
+]);
 
 function formatCurrencyAmount(value, currencyCode) {
   const amount = Number(value) || 0;
@@ -173,6 +224,7 @@ const IGNITE_DIGITAL_EXTRA_PRODUCT_CODES = {
 };
 
 const IGNITE_COMMUNITIES_PRODUCT_CODE = "IGNITE-COMMUNITIES";
+const SMS_SURVEY_INVITE_PRODUCT_CODE = "SMS-SURVEY-INVITE";
 const IGNITE_DIGITAL_PRODUCT_CODE = "IGNITE-DIGITAL";
 const CASE_MANAGEMENT_PRODUCT_CODE = "CASE-MANAGEMENT";
 const SETUP_FEE_PRODUCT_CODE = "SETUP";
@@ -289,6 +341,16 @@ function parseCommunityConfigurationFromDescription(description) {
   };
 }
 
+// Monthly invite volume is the only thing worth recovering from a synced SMS line - the
+// rates themselves come from the rate card, never from the stored description.
+function parseSmsInvitesFromDescription(description) {
+  const match = /([\d,]+) invites\/month/.exec(description || "");
+  if (!match) {
+    return null;
+  }
+  return Number(match[1].replace(/,/g, ""));
+}
+
 // Calculator fields fall back to the workbook default rather than 0 when a seller clears
 // them, matching computeCommunityQuote so the displayed inputs and the price agree.
 function communityInputValue(raw, fallback) {
@@ -347,6 +409,8 @@ export default class PricingTool extends LightningElement {
   igniteExPulseQuantity = 0;
 
   igniteCommunitiesEnabled = false;
+  smsSurveyInviteEnabled = false;
+  smsSurveyInviteMonthlyInvites = SMS_SURVEY_INVITE.includedMonthlyInvites;
   igniteDigitalEnabled = false;
   igniteDigitalExtras = [];
   mouseflowTier = "Essential";
@@ -356,6 +420,7 @@ export default class PricingTool extends LightningElement {
   prefillApplied = false;
   opportunityFieldsPrefillApplied = false;
   currencyCode = DEFAULT_CURRENCY_CODE;
+  conversionRatesByIsoCode = {};
 
   communityTier = "DIY";
   communityMarkets = 1;
@@ -372,7 +437,7 @@ export default class PricingTool extends LightningElement {
 
   isSyncingProducts = false;
 
-  managedListingManagementReference = MANAGED_LISTING_MANAGEMENT_REFERENCE;
+  managedListingManagementReferenceUsd = MANAGED_LISTING_MANAGEMENT_REFERENCE;
 
   @wire(getRecord, {
     recordId: "$recordId",
@@ -432,6 +497,15 @@ export default class PricingTool extends LightningElement {
   // any, so a rep revisiting an Opportunity starts from its current configuration instead of a
   // blank quote. Guarded by prefillApplied so a later refresh (e.g. after this component's own
   // "Add Products" sync) doesn't clobber whatever the rep has since changed.
+  // Live from Setup > Manage Currencies, so a rate change in Salesforce reaches the tool
+  // without a redeploy.
+  @wire(getCurrencyConversionRates)
+  wiredCurrencyConversionRates({ data }) {
+    if (data) {
+      this.conversionRatesByIsoCode = data;
+    }
+  }
+
   @wire(getExistingLineItems, { opportunityId: "$recordId" })
   wiredExistingLineItems({ data }) {
     if (data && !this.prefillApplied) {
@@ -510,7 +584,9 @@ export default class PricingTool extends LightningElement {
   }
 
   get igniteDigitalExtrasResult() {
-    return computeIgniteDigitalExtras(this.igniteDigitalExtras, this.mouseflowTier);
+    return this.toDealCurrency(
+      computeIgniteDigitalExtras(this.igniteDigitalExtras, this.mouseflowTier)
+    );
   }
 
   get mouseflowTierOptions() {
@@ -543,11 +619,17 @@ export default class PricingTool extends LightningElement {
   }
 
   get igniteExResult() {
-    return computeIgniteEx({
-      selectedItems: this.igniteExSelectedItems,
-      locations: this.locations,
-      pulseQuantity: this.igniteExPulseQuantity
-    });
+    return this.toDealCurrency(
+      computeIgniteEx({
+        selectedItems: this.igniteExSelectedItems,
+        locations: this.locations,
+        pulseQuantity: this.igniteExPulseQuantity
+      })
+    );
+  }
+
+  get managedListingManagementReference() {
+    return this.toDealCurrency(this.managedListingManagementReferenceUsd);
   }
 
   get communityTierSpec() {
@@ -555,7 +637,8 @@ export default class PricingTool extends LightningElement {
   }
 
   get communityQuote() {
-    return computeCommunityQuote({
+    return this.toDealCurrency(
+      computeCommunityQuote({
       tier: this.communityTier,
       numberOfMarkets: this.communityMarkets,
       membersRecruited: this.communityMembersRecruited,
@@ -568,8 +651,9 @@ export default class PricingTool extends LightningElement {
       additionalConsultancyProjects: this.communityAdditionalConsultancyProjects,
       additionalMarketRecruitmentFee:
         this.communityAdditionalMarketRecruitmentFee,
-      additionalMarketIncentiveFee: this.communityAdditionalMarketIncentiveFee
-    });
+        additionalMarketIncentiveFee: this.communityAdditionalMarketIncentiveFee
+      })
+    );
   }
 
   get communityTierDiscountPercentDisplay() {
@@ -689,11 +773,14 @@ export default class PricingTool extends LightningElement {
   }
 
   get baseQuote() {
-    return computeBaseQuote(this.serviceTier, this.locations, this.termMonths);
+    return this.toDealCurrency(
+      computeBaseQuote(this.serviceTier, this.locations, this.termMonths)
+    );
   }
 
   get addOnsResult() {
-    return computeAddOns(
+    return this.toDealCurrency(
+      computeAddOns(
       {
         additionalLanguages: this.additionalLanguages,
         additionalSurveys: this.additionalSurveys,
@@ -703,8 +790,9 @@ export default class PricingTool extends LightningElement {
         additionalPerformance: this.additionalPerformance,
         additionalAgile: this.additionalAgile,
         additionalConsultative: this.additionalConsultative
-      },
-      this.locations
+        },
+        this.locations
+      )
     );
   }
 
@@ -716,10 +804,12 @@ export default class PricingTool extends LightningElement {
     if (!this.agentTrackEnabled) {
       return { variant: "none", annualTotal: 0, perLocPerMonth: 0 };
     }
-    return computeCallCenter(
-      this.agentTrackVariant,
-      this.agentCountRepresentative,
-      this.locations
+    return this.toDealCurrency(
+      computeCallCenter(
+        this.agentTrackVariant,
+        this.agentCountRepresentative,
+        this.locations
+      )
     );
   }
 
@@ -727,7 +817,9 @@ export default class PricingTool extends LightningElement {
     if (!this.ratingsReviewsEnabled) {
       return null;
     }
-    return computeRatingsReviews(this.ratingsReviewsTier, this.locations);
+    return this.toDealCurrency(
+      computeRatingsReviews(this.ratingsReviewsTier, this.locations)
+    );
   }
 
   get discountGuidance() {
@@ -735,7 +827,7 @@ export default class PricingTool extends LightningElement {
   }
 
   get setupFeeAmount() {
-    return computeSetupFee(this.locations);
+    return this.fromUsd(computeSetupFee(this.locations));
   }
 
   get caseManagementFee() {
@@ -746,15 +838,81 @@ export default class PricingTool extends LightningElement {
     return `One-Time Setup Fee (${this.formatCurrency(this.setupFeeAmount)})`;
   }
 
+  // Units of the Opportunity currency per one USD. The corporate currency is USD at 1.0, so
+  // an unknown or not-yet-loaded code leaves prices unconverted rather than zeroing them.
+  get conversionRate() {
+    const rate = Number(this.conversionRatesByIsoCode?.[this.currencyCode]);
+    return Number.isFinite(rate) && rate > 0 ? rate : 1;
+  }
+
+  get isConvertedFromUsd() {
+    return this.conversionRate !== 1;
+  }
+
+  get conversionRateNote() {
+    if (!this.isConvertedFromUsd) {
+      return "";
+    }
+    return `Rates are held in USD and shown converted at ${this.conversionRate} ${this.currencyCode} per USD, the active Salesforce rate.`;
+  }
+
+  fromUsd(usdValue) {
+    const amount = Number(usdValue);
+    if (!Number.isFinite(amount)) {
+      return usdValue;
+    }
+    return round2(amount * this.conversionRate);
+  }
+
+  toUsd(dealValue) {
+    const amount = Number(dealValue);
+    if (!Number.isFinite(amount)) {
+      return 0;
+    }
+    return round2(amount / this.conversionRate);
+  }
+
+  // Converts every money field of a pricing-engine result into the Opportunity currency,
+  // recursing through nested line arrays. Returns the value untouched when no conversion is
+  // needed, so a USD Opportunity does no extra work.
+  toDealCurrency(result) {
+    if (result == null || !this.isConvertedFromUsd) {
+      return result;
+    }
+    if (Array.isArray(result)) {
+      return result.map((entry) => this.toDealCurrency(entry));
+    }
+    if (typeof result !== "object") {
+      return result;
+    }
+    const converted = {};
+    for (const [key, value] of Object.entries(result)) {
+      if (MONEY_FIELDS.has(key) && typeof value === "number") {
+        converted[key] = this.fromUsd(value);
+      } else if (value !== null && typeof value === "object") {
+        converted[key] = this.toDealCurrency(value);
+      } else {
+        converted[key] = value;
+      }
+    }
+    return converted;
+  }
+
+  // Formats an amount that is already in the Opportunity currency.
   formatCurrency(value) {
     return formatCurrencyAmount(value, this.currencyCode);
+  }
+
+  // Formats a USD rate-card constant, converting it first.
+  formatUsd(usdValue) {
+    return formatCurrencyAmount(this.fromUsd(usdValue), this.currencyCode);
   }
 
   // Add-on rates are shown in the field label so a seller sees the price without adding the
   // line first. Built here rather than hard-coded in the template so they follow both the
   // rate card and the Opportunity's currency.
   get addOnLabels() {
-    const money = (value) => this.formatCurrency(value);
+    const money = (value) => this.formatUsd(value);
     return {
       additionalLanguages: `Add'l Languages (${money(
         ADD_ON_RATES.additionalLanguageSurveys
@@ -782,11 +940,11 @@ export default class PricingTool extends LightningElement {
   }
 
   get casePremiumLabel() {
-    return `Case Premium (${this.formatCurrency(CASE_MANAGEMENT_FEE)} one-time)`;
+    return `Case Premium (${this.formatUsd(CASE_MANAGEMENT_FEE)} one-time)`;
   }
 
   get igniteDigitalPricingNote() {
-    const money = (value) => this.formatCurrency(value);
+    const money = (value) => this.formatUsd(value);
     return (
       `Mouseflow Config is priced by its own tier \u2014 ${money(
         IGNITE_DIGITAL_MOUSEFLOW_FEE_BY_TIER.Essential
@@ -802,6 +960,56 @@ export default class PricingTool extends LightningElement {
   // lightning-input's currency formatter always renders the viewer's locale currency and
   // takes no override, so these money fields carry no formatter and name the Opportunity
   // currency in the label instead.
+  get smsSurveyInviteResult() {
+    return this.toDealCurrency(
+      computeSmsSurveyInvites(this.smsSurveyInviteMonthlyInvites)
+    );
+  }
+
+  get smsSurveyInviteLabel() {
+    return `SMS Survey Invite (${this.formatUsd(
+      SMS_SURVEY_INVITE.baseMonthlyFee
+    )}/mo for ${SMS_SURVEY_INVITE.includedMonthlyInvites.toLocaleString()} invites)`;
+  }
+
+  get smsSurveyInviteOverageNote() {
+    return `${SMS_SURVEY_INVITE.includedMonthlyInvites.toLocaleString()} invites/month are included. Every further block of ${SMS_SURVEY_INVITE.overageBlockInvites.toLocaleString()} invites, or any part of one, adds ${this.formatUsd(
+      SMS_SURVEY_INVITE.overageBlockMonthlyFee
+    )}/month.`;
+  }
+
+  get smsSurveyInviteOverageSummary() {
+    const result = this.smsSurveyInviteResult;
+    if (result.overageBlocks === 0) {
+      return "Within the included volume - no overage blocks.";
+    }
+    return `${result.overageBlocks} overage block${
+      result.overageBlocks === 1 ? "" : "s"
+    } of ${result.overageBlockInvites.toLocaleString()} invites.`;
+  }
+
+  // The five free-text money fields are stored in USD, like every other rate, and shown and
+  // entered in the Opportunity currency.
+  get communityCostPerAcquisitionDisplay() {
+    return this.fromUsd(this.communityCostPerAcquisition);
+  }
+
+  get communityIncentivePerBriefDisplay() {
+    return this.fromUsd(this.communityIncentivePerBrief);
+  }
+
+  get communityDiyCostPerProjectDisplay() {
+    return this.fromUsd(this.communityDiyCostPerProject);
+  }
+
+  get communityAdditionalMarketRecruitmentFeeDisplay() {
+    return this.fromUsd(this.communityAdditionalMarketRecruitmentFee);
+  }
+
+  get communityAdditionalMarketIncentiveFeeDisplay() {
+    return this.fromUsd(this.communityAdditionalMarketIncentiveFee);
+  }
+
   get communityMoneyLabels() {
     const code = this.currencyCode;
     return {
@@ -814,18 +1022,17 @@ export default class PricingTool extends LightningElement {
   }
 
   get communityTaggingNote() {
-    return `Default is 2 briefs at ${formatCurrencyAmount(
-      1,
-      this.currencyCode
+    return `Default is 2 briefs at ${this.formatUsd(
+      COMMUNITY_RECRUITMENT_DEFAULTS.incentivePerBrief
     ).replace(/\u00a0/g, " ")} incentive. The tagging incentive is paid per member, per brief.`;
   }
 
   get communityAgileProjectRateLabel() {
-    return `${this.formatCurrency(COMMUNITY_AGILE_PROJECT_RATE)} each.`;
+    return `${this.formatUsd(COMMUNITY_AGILE_PROJECT_RATE)} each.`;
   }
 
   get communityConsultancyProjectRateLabel() {
-    return `${this.formatCurrency(COMMUNITY_CONSULTANCY_PROJECT_RATE)} each.`;
+    return `${this.formatUsd(COMMUNITY_CONSULTANCY_PROJECT_RATE)} each.`;
   }
 
   // The full list-price (pre-discount) recurring total across every product in the quote. The
@@ -844,6 +1051,9 @@ export default class PricingTool extends LightningElement {
     }
     if (this.igniteCommunitiesEnabled) {
       total += this.communityQuote.totalAnnual;
+    }
+    if (this.smsSurveyInviteEnabled) {
+      total += this.smsSurveyInviteResult.annualTotal;
     }
     if (this.igniteDigitalEnabled) {
       total += this.igniteDigitalExtrasResult.annualTotal;
@@ -1017,6 +1227,15 @@ export default class PricingTool extends LightningElement {
         continue;
       }
 
+      if (code === SMS_SURVEY_INVITE_PRODUCT_CODE) {
+        this.smsSurveyInviteEnabled = true;
+        const invites = parseSmsInvitesFromDescription(line.description);
+        if (invites != null) {
+          this.smsSurveyInviteMonthlyInvites = invites;
+        }
+        continue;
+      }
+
       if (code === IGNITE_COMMUNITIES_PRODUCT_CODE) {
         this.igniteCommunitiesEnabled = true;
         const communityConfig = parseCommunityConfigurationFromDescription(
@@ -1127,6 +1346,17 @@ export default class PricingTool extends LightningElement {
         } ${quote.markets === 1 ? "community" : "communities"}, ${
           quote.membersRecruited
         } members recruited`,
+        isOneTime: false
+      });
+    }
+
+    if (this.smsSurveyInviteEnabled) {
+      const sms = this.smsSurveyInviteResult;
+      lines.push({
+        productCode: SMS_SURVEY_INVITE_PRODUCT_CODE,
+        quantity: 1,
+        unitPrice: this.applyDiscount(sms.annualTotal),
+        description: `SMS Survey Invite \u2014 ${sms.monthlyInvites.toLocaleString()} invites/month`,
         isOneTime: false
       });
     }
@@ -1249,6 +1479,16 @@ export default class PricingTool extends LightningElement {
     this.igniteCommunitiesEnabled = event.target.checked;
   }
 
+  handleSmsSurveyInviteToggle(event) {
+    this.smsSurveyInviteEnabled = event.target.checked;
+  }
+
+  handleSmsSurveyInvitesChange(event) {
+    const value = Number(event.target.value);
+    this.smsSurveyInviteMonthlyInvites =
+      Number.isFinite(value) && value > 0 ? value : 0;
+  }
+
   handleCommunityTierChange(event) {
     this.communityTier = event.detail.value;
   }
@@ -1266,10 +1506,23 @@ export default class PricingTool extends LightningElement {
   }
 
   handleCommunityCostPerAcquisitionChange(event) {
-    this.communityCostPerAcquisition = communityInputValue(
+    this.communityCostPerAcquisition = this.communityMoneyInput(
       event.target.value,
       COMMUNITY_RECRUITMENT_DEFAULTS.costPerAcquisition
     );
+  }
+
+  // Money typed into the calculator is in the Opportunity currency; store it in USD so the
+  // engine, which is USD throughout, keeps receiving USD.
+  communityMoneyInput(raw, usdFallback) {
+    if (raw === "" || raw === null || raw === undefined) {
+      return usdFallback;
+    }
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < 0) {
+      return usdFallback;
+    }
+    return this.toUsd(value);
   }
 
   handleCommunityTaggingBriefsChange(event) {
@@ -1280,7 +1533,7 @@ export default class PricingTool extends LightningElement {
   }
 
   handleCommunityIncentivePerBriefChange(event) {
-    this.communityIncentivePerBrief = communityInputValue(
+    this.communityIncentivePerBrief = this.communityMoneyInput(
       event.target.value,
       COMMUNITY_RECRUITMENT_DEFAULTS.incentivePerBrief
     );
@@ -1294,7 +1547,7 @@ export default class PricingTool extends LightningElement {
   }
 
   handleCommunityDiyCostChange(event) {
-    this.communityDiyCostPerProject = communityInputValue(
+    this.communityDiyCostPerProject = this.communityMoneyInput(
       event.target.value,
       COMMUNITY_DIY_INCENTIVE_DEFAULTS.costPerProject
     );
@@ -1313,15 +1566,17 @@ export default class PricingTool extends LightningElement {
   }
 
   handleCommunityAdditionalMarketRecruitmentChange(event) {
-    const value = Number(event.target.value);
-    this.communityAdditionalMarketRecruitmentFee =
-      Number.isFinite(value) && value > 0 ? value : 0;
+    this.communityAdditionalMarketRecruitmentFee = this.communityMoneyInput(
+      event.target.value,
+      0
+    );
   }
 
   handleCommunityAdditionalMarketIncentiveChange(event) {
-    const value = Number(event.target.value);
-    this.communityAdditionalMarketIncentiveFee =
-      Number.isFinite(value) && value > 0 ? value : 0;
+    this.communityAdditionalMarketIncentiveFee = this.communityMoneyInput(
+      event.target.value,
+      0
+    );
   }
 
   handleIgniteDigitalToggle(event) {

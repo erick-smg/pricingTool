@@ -288,6 +288,15 @@
             </lightning-layout-item>
             <lightning-layout-item size="4" padding="around-small">
               <lightning-input
+                data-id="sms-survey-invite-toggle"
+                type="checkbox"
+                label={smsSurveyInviteLabel}
+                checked={smsSurveyInviteEnabled}
+                onchange={handleSmsSurveyInviteToggle}
+              ></lightning-input>
+            </lightning-layout-item>
+            <lightning-layout-item size="4" padding="around-small">
+              <lightning-input
                 data-id="case-management-toggle"
                 type="checkbox"
                 label={casePremiumLabel}
@@ -464,6 +473,56 @@
             </div>
           </template>
 
+          <template if:true={smsSurveyInviteEnabled}>
+            <div class="slds-box slds-theme_default slds-m-top_medium">
+              <h3 class="slds-text-heading_small slds-m-bottom_x-small">
+                SMS Survey Invite
+              </h3>
+              <p class="slds-text-body_small slds-m-bottom_small">
+                {smsSurveyInviteOverageNote}
+              </p>
+
+              <lightning-layout multiple-rows="true">
+                <lightning-layout-item size="4" padding="around-small">
+                  <lightning-input
+                    data-id="sms-survey-invites-input"
+                    type="number"
+                    label="SMS Invites per Month"
+                    value={smsSurveyInviteMonthlyInvites}
+                    min="0"
+                    step="1000"
+                    onchange={handleSmsSurveyInvitesChange}
+                  ></lightning-input>
+                  <p class="slds-text-body_small">
+                    {smsSurveyInviteOverageSummary}
+                  </p>
+                </lightning-layout-item>
+                <lightning-layout-item size="4" padding="around-small">
+                  <p class="slds-text-title">Monthly</p>
+                  <p class="slds-text-heading_small">
+                    <lightning-formatted-number
+                      data-id="sms-survey-invite-monthly"
+                      value={smsSurveyInviteResult.monthlyTotal}
+                      format-style="currency"
+                      currency-code={currencyCode}
+                    ></lightning-formatted-number>
+                  </p>
+                </lightning-layout-item>
+                <lightning-layout-item size="4" padding="around-small">
+                  <p class="slds-text-title">Annual</p>
+                  <p class="slds-text-heading_small">
+                    <lightning-formatted-number
+                      data-id="sms-survey-invite-annual"
+                      value={smsSurveyInviteResult.annualTotal}
+                      format-style="currency"
+                      currency-code={currencyCode}
+                    ></lightning-formatted-number>
+                  </p>
+                </lightning-layout-item>
+              </lightning-layout>
+            </div>
+          </template>
+
           <template if:true={igniteCommunitiesEnabled}>
             <div class="slds-box slds-theme_default slds-m-top_medium">
               <h3 class="slds-text-heading_small slds-m-bottom_x-small">
@@ -526,7 +585,7 @@
                     data-id="community-cpa-input"
                     type="number"
                     label={communityMoneyLabels.costPerAcquisition}
-                    value={communityCostPerAcquisition}
+                    value={communityCostPerAcquisitionDisplay}
                     min="0"
                     step="0.01"
                     onchange={handleCommunityCostPerAcquisitionChange}
@@ -548,7 +607,7 @@
                     data-id="community-brief-incentive-input"
                     type="number"
                     label={communityMoneyLabels.incentivePerBrief}
-                    value={communityIncentivePerBrief}
+                    value={communityIncentivePerBriefDisplay}
                     min="0"
                     step="0.01"
                     onchange={handleCommunityIncentivePerBriefChange}
@@ -579,7 +638,7 @@
                     data-id="community-diy-cost-input"
                     type="number"
                     label={communityMoneyLabels.diyCostPerProject}
-                    value={communityDiyCostPerProject}
+                    value={communityDiyCostPerProjectDisplay}
                     min="0"
                     step="0.01"
                     onchange={handleCommunityDiyCostChange}
@@ -636,7 +695,7 @@
                       data-id="community-additional-recruitment-input"
                       type="number"
                       label={communityMoneyLabels.additionalMarketRecruitment}
-                      value={communityAdditionalMarketRecruitmentFee}
+                      value={communityAdditionalMarketRecruitmentFeeDisplay}
                       min="0"
                       step="0.01"
                       onchange={handleCommunityAdditionalMarketRecruitmentChange}
@@ -647,7 +706,7 @@
                       data-id="community-additional-incentives-input"
                       type="number"
                       label={communityMoneyLabels.additionalMarketIncentives}
-                      value={communityAdditionalMarketIncentiveFee}
+                      value={communityAdditionalMarketIncentiveFeeDisplay}
                       min="0"
                       step="0.01"
                       onchange={handleCommunityAdditionalMarketIncentiveChange}
@@ -959,6 +1018,15 @@
         <h3 class="slds-text-heading_small slds-m-bottom_x-small">
           Quote Summary
         </h3>
+
+        <template if:true={isConvertedFromUsd}>
+          <p
+            data-id="conversion-rate-note"
+            class="slds-text-body_small slds-m-bottom_small"
+          >
+            {conversionRateNote}
+          </p>
+        </template>
 
         <template if:true={lineItemsForDisplay.length}>
           <div class="slds-var-m-bottom_small" style="overflow-x: auto">

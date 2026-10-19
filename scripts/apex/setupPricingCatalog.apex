@@ -70,6 +70,7 @@ Map<String, String> productNamesByCode = new Map<String, String>{
 
   // Other add-ons
   'IGNITE-COMMUNITIES' => 'Ignite Communities',
+  'SMS-SURVEY-INVITE' => 'SMS Survey Invite',
   'CASE-MANAGEMENT' => 'Case Premium',
   'SETUP' => 'Setup Fee'
 };

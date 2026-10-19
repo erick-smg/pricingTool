@@ -52,6 +52,7 @@ List<String> productCodes = new List<String>{
   'IGNITE-DIGITAL-MOUSEFLOW',
   'IGNITE-DIGITAL-CONTACTUS',
   'IGNITE-COMMUNITIES',
+  'SMS-SURVEY-INVITE',
   'CASE-MANAGEMENT',
   'SETUP'
 };

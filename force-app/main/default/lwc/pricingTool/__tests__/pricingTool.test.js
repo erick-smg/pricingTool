@@ -612,7 +612,7 @@ describe("c-pricing-tool", () => {
     ).toBe(1000);
     expect(
       element.shadowRoot.querySelector('[data-id="community-cpa-input"]').value
-    ).toBe(6);
+    ).toBe(7.92);
     expect(
       element.shadowRoot.querySelector('[data-id="community-briefs-input"]')
         .value
@@ -645,7 +645,7 @@ describe("c-pricing-tool", () => {
     ]);
   });
 
-  it("renders the workbook line breakdown and totals the Starter community at 55,830", async () => {
+  it("renders the workbook line breakdown, converted from GBP to USD", async () => {
     const element = createTool();
     await flush();
 
@@ -668,7 +668,7 @@ describe("c-pricing-tool", () => {
         '[data-id="community-quote-table"] tbody lightning-formatted-number'
       )
     ).map((el) => el.value);
-    expect(amounts).toEqual([40000, 8000, 4080, 3750]);
+    expect(amounts).toEqual([52800, 10560, 5385.6, 4950]);
   });
 
   it("adds an AGILE line and a tier discount line on the Advanced tier", async () => {
@@ -697,7 +697,7 @@ describe("c-pricing-tool", () => {
     ).map((el) => el.value);
     // Platform, Recruitment, Incentives, Service Level, AGILE, CONSULTANCY, discount.
     expect(amounts).toEqual([
-      40000, 8000, 4080, 22709, 30000, 35800, -6425.45
+      52800, 10560, 5385.6, 29975.88, 39600, 47256, -8481.59
     ]);
   });
 
@@ -865,6 +865,123 @@ describe("c-pricing-tool", () => {
         '[data-id="community-brief-incentive-input"]'
       ).label
     ).toBe("Incentive per Brief (GBP)");
+  });
+
+  it("shows the SMS Survey Invite detail block only when the add-on is toggled on", async () => {
+    const element = createTool();
+    await flush();
+
+    expect(
+      element.shadowRoot.querySelector('[data-id="sms-survey-invites-input"]')
+    ).toBeNull();
+
+    const smsToggle = element.shadowRoot.querySelector(
+      '[data-id="sms-survey-invite-toggle"]'
+    );
+    expect(smsToggle.label).toBe(
+      "SMS Survey Invite ($1,000/mo for 100,000 invites)"
+    );
+    smsToggle.checked = true;
+    smsToggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const invitesInput = element.shadowRoot.querySelector(
+      '[data-id="sms-survey-invites-input"]'
+    );
+    expect(invitesInput).not.toBeNull();
+    expect(invitesInput.value).toBe(100000);
+    expect(
+      element.shadowRoot.querySelector('[data-id="sms-survey-invite-monthly"]')
+        .value
+    ).toBe(1000);
+    expect(
+      element.shadowRoot.querySelector('[data-id="sms-survey-invite-annual"]')
+        .value
+    ).toBe(12000);
+  });
+
+  it("adds an overage block when the monthly invite volume passes the included amount", async () => {
+    const element = createTool();
+    await flush();
+
+    const smsToggle = element.shadowRoot.querySelector(
+      '[data-id="sms-survey-invite-toggle"]'
+    );
+    smsToggle.checked = true;
+    smsToggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const invitesInput = element.shadowRoot.querySelector(
+      '[data-id="sms-survey-invites-input"]'
+    );
+    invitesInput.value = 175000;
+    invitesInput.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    expect(
+      element.shadowRoot.querySelector('[data-id="sms-survey-invite-monthly"]')
+        .value
+    ).toBe(2200);
+    expect(
+      element.shadowRoot.querySelector('[data-id="sms-survey-invite-annual"]')
+        .value
+    ).toBe(26400);
+  });
+
+  it("adds the SMS Survey Invite annual price into the quoted total", async () => {
+    const element = createTool();
+    await flush();
+
+    const annualBefore = element.shadowRoot.querySelector(
+      '[data-id="quoted-price-annual"]'
+    ).value;
+
+    const smsToggle = element.shadowRoot.querySelector(
+      '[data-id="sms-survey-invite-toggle"]'
+    );
+    smsToggle.checked = true;
+    smsToggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const annualAfter = element.shadowRoot.querySelector(
+      '[data-id="quoted-price-annual"]'
+    ).value;
+    expect(round2(annualAfter - annualBefore)).toBe(12000);
+  });
+
+  it("quotes SMS Survey Invite as one recurring line item", async () => {
+    const element = createTool();
+    await flush();
+
+    const smsToggle = element.shadowRoot.querySelector(
+      '[data-id="sms-survey-invite-toggle"]'
+    );
+    smsToggle.checked = true;
+    smsToggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const invitesInput = element.shadowRoot.querySelector(
+      '[data-id="sms-survey-invites-input"]'
+    );
+    invitesInput.value = 200000;
+    invitesInput.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    element.shadowRoot
+      .querySelector('[data-id="export-pptx-button"]')
+      .dispatchEvent(new CustomEvent("click"));
+    await flush();
+
+    const payload = exportQuoteToPowerPoint.mock.calls.slice(-1)[0][0];
+    const smsLine = payload.lines.find(
+      (line) => line.productCode === "SMS-SURVEY-INVITE"
+    );
+    expect(smsLine).toBeDefined();
+    expect(smsLine.description).toBe(
+      "SMS Survey Invite — 200,000 invites/month"
+    );
+    expect(smsLine.isOneTime).toBe(false);
+    expect(smsLine.totalPrice).toBe(26400);
   });
 
   it("always shows the base package line in the Quote Summary, even with nothing else toggled on", async () => {
