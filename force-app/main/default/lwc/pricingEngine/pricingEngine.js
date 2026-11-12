@@ -153,12 +153,15 @@ export const ADD_ON_RATES = {
 
 // SMS Survey Invite. The base fee covers the first 100,000 invites in a month; past that,
 // every further block of 50,000 invites (or any part of one) adds its own monthly fee. Both
-// fees are monthly, so the annual price is twelve times the monthly total.
+// fees are monthly, so the annual price is twelve times the monthly total. Volumes above
+// productReviewAboveMonthlyInvites must be cleared with Product before they are quoted.
 export const SMS_SURVEY_INVITE = {
   baseMonthlyFee: 1000,
   includedMonthlyInvites: 100000,
   overageBlockInvites: 50000,
-  overageBlockMonthlyFee: 600
+  overageBlockMonthlyFee: 600,
+  productReviewAboveMonthlyInvites: 500000,
+  productReviewContact: "Jami Ferguson (Product)"
 };
 
 /**
@@ -189,7 +192,9 @@ export function computeSmsSurveyInvites(monthlyInvites) {
     baseMonthly,
     overageMonthly,
     monthlyTotal,
-    annualTotal: round2(monthlyTotal * 12)
+    annualTotal: round2(monthlyTotal * 12),
+    requiresProductReview:
+      invites > SMS_SURVEY_INVITE.productReviewAboveMonthlyInvites
   };
 }
 
@@ -901,9 +906,10 @@ export function computeRatingsReviews(tierKey, locations) {
 // The two location-banded columns are the "Long Form Annual Survey" engagement tiers; every
 // other item is a flat, location-independent professional-services fee. 10,000+ locations has
 // no published rate ("Custom, see Tara") - flagged via isCustom the same way the base package's
-// 5,000+ band is.
+// 5,000+ band is. The sheet starts at 200 locations; smaller deals pay that first band as a
+// minimum, so it is opened down to 1 location.
 export const IGNITE_EX_LOCATION_BANDS = [
-  { min: 200, max: 300, label: "200 - 300", engagementOneConsultative: 75000, engagementTwoConsultative: 120000 },
+  { min: 1, max: 300, label: "Up to 300", engagementOneConsultative: 75000, engagementTwoConsultative: 120000 },
   { min: 301, max: 400, label: "301 - 400", engagementOneConsultative: 95000, engagementTwoConsultative: 140000 },
   { min: 401, max: 500, label: "401 - 500", engagementOneConsultative: 110000, engagementTwoConsultative: 155000 },
   { min: 501, max: 1000, label: "501 - 1,000", engagementOneConsultative: 135000, engagementTwoConsultative: 180000 },

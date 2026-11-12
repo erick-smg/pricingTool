@@ -900,6 +900,114 @@ describe("c-pricing-tool", () => {
     ).toBe(12000);
   });
 
+  it("says how much headroom is left before the first overage charge", async () => {
+    const element = createTool();
+    await flush();
+
+    const smsToggle = element.shadowRoot.querySelector(
+      '[data-id="sms-survey-invite-toggle"]'
+    );
+    smsToggle.checked = true;
+    smsToggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const invitesInput = element.shadowRoot.querySelector(
+      '[data-id="sms-survey-invites-input"]'
+    );
+    invitesInput.value = 80000;
+    invitesInput.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const summary = invitesInput.parentElement.querySelector("p").textContent;
+    expect(summary).toContain("20,000 invites of headroom");
+    expect(summary).toContain("100,001 invites");
+  });
+
+  it("says where the next overage charge lands once a block is already bought", async () => {
+    const element = createTool();
+    await flush();
+
+    const smsToggle = element.shadowRoot.querySelector(
+      '[data-id="sms-survey-invite-toggle"]'
+    );
+    smsToggle.checked = true;
+    smsToggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const invitesInput = element.shadowRoot.querySelector(
+      '[data-id="sms-survey-invites-input"]'
+    );
+    invitesInput.value = 120000;
+    invitesInput.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const summary = invitesInput.parentElement.querySelector("p").textContent;
+    expect(summary).toContain("1 overage block");
+    expect(summary).toContain("30,000 invites of headroom");
+    expect(summary).toContain("150,001 invites");
+  });
+
+  it("lays out the charging thresholds and highlights the active band", async () => {
+    const element = createTool();
+    await flush();
+
+    const smsToggle = element.shadowRoot.querySelector(
+      '[data-id="sms-survey-invite-toggle"]'
+    );
+    smsToggle.checked = true;
+    smsToggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const rows = Array.from(
+      element.shadowRoot.querySelectorAll(
+        '[data-id="sms-survey-invite-bands"] tbody tr'
+      )
+    );
+    // Included band plus three overage bands by default.
+    expect(rows.length).toBe(4);
+    expect(rows[0].querySelector("th").textContent).toBe("Up to 100,000");
+    expect(rows[1].querySelector("th").textContent).toBe("100,001 \u2013 150,000");
+    expect(rows[2].querySelector("th").textContent).toBe("150,001 \u2013 200,000");
+
+    const amounts = rows.map(
+      (row) => row.querySelector("lightning-formatted-number").value
+    );
+    expect(amounts).toEqual([1000, 1600, 2200, 2800]);
+
+    // At the default volume the included band is the active one.
+    expect(rows[0].className).toContain("slds-is-selected");
+    expect(rows[1].className).not.toContain("slds-is-selected");
+  });
+
+  it("moves the highlighted band and extends the table as volume grows", async () => {
+    const element = createTool();
+    await flush();
+
+    const smsToggle = element.shadowRoot.querySelector(
+      '[data-id="sms-survey-invite-toggle"]'
+    );
+    smsToggle.checked = true;
+    smsToggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const invitesInput = element.shadowRoot.querySelector(
+      '[data-id="sms-survey-invites-input"]'
+    );
+    invitesInput.value = 300000;
+    invitesInput.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const rows = Array.from(
+      element.shadowRoot.querySelectorAll(
+        '[data-id="sms-survey-invite-bands"] tbody tr'
+      )
+    );
+    // Four blocks are in use, so the table runs one band past that.
+    expect(rows.length).toBe(6);
+    expect(rows[4].className).toContain("slds-is-selected");
+    expect(rows[4].querySelector("th").textContent).toBe("250,001 \u2013 300,000");
+  });
+
   it("adds an overage block when the monthly invite volume passes the included amount", async () => {
     const element = createTool();
     await flush();
@@ -926,6 +1034,37 @@ describe("c-pricing-tool", () => {
       element.shadowRoot.querySelector('[data-id="sms-survey-invite-annual"]')
         .value
     ).toBe(26400);
+  });
+
+  it("warns that SMS volumes above 500,000 a month need Product sign-off", async () => {
+    const element = createTool();
+    await flush();
+
+    const smsToggle = element.shadowRoot.querySelector(
+      '[data-id="sms-survey-invite-toggle"]'
+    );
+    smsToggle.checked = true;
+    smsToggle.dispatchEvent(new CustomEvent("change"));
+    await flush();
+
+    const warning = () =>
+      element.shadowRoot.querySelector(
+        '[data-id="sms-survey-invite-product-review"]'
+      );
+    const invitesInput = element.shadowRoot.querySelector(
+      '[data-id="sms-survey-invites-input"]'
+    );
+
+    invitesInput.value = 500000;
+    invitesInput.dispatchEvent(new CustomEvent("change"));
+    await flush();
+    expect(warning()).toBeNull();
+
+    invitesInput.value = 500001;
+    invitesInput.dispatchEvent(new CustomEvent("change"));
+    await flush();
+    expect(warning()).not.toBeNull();
+    expect(warning().textContent).toContain("Jami Ferguson (Product)");
   });
 
   it("adds the SMS Survey Invite annual price into the quoted total", async () => {

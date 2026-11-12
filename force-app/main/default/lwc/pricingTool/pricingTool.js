@@ -973,19 +973,82 @@ export default class PricingTool extends LightningElement {
   }
 
   get smsSurveyInviteOverageNote() {
-    return `${SMS_SURVEY_INVITE.includedMonthlyInvites.toLocaleString()} invites/month are included. Every further block of ${SMS_SURVEY_INVITE.overageBlockInvites.toLocaleString()} invites, or any part of one, adds ${this.formatUsd(
+    return `The base fee covers the first ${SMS_SURVEY_INVITE.includedMonthlyInvites.toLocaleString()} invites each month. Go one invite over and a whole block of ${SMS_SURVEY_INVITE.overageBlockInvites.toLocaleString()} is added at ${this.formatUsd(
       SMS_SURVEY_INVITE.overageBlockMonthlyFee
-    )}/month.`;
+    )}/month \u2014 blocks are never prorated, so a single extra invite costs the same as ${SMS_SURVEY_INVITE.overageBlockInvites.toLocaleString()}.`;
   }
 
+  get smsSurveyInviteProductReviewMessage() {
+    return `Volumes above ${SMS_SURVEY_INVITE.productReviewAboveMonthlyInvites.toLocaleString()} invites/month must be cleared with ${SMS_SURVEY_INVITE.productReviewContact} before quoting.`;
+  }
+
+  // Volume at which the next block fee is added - one invite past whatever the current
+  // allowance covers (the included volume, or the top of the last block bought).
+  get smsSurveyInviteNextChargeAt() {
+    const result = this.smsSurveyInviteResult;
+    return (
+      SMS_SURVEY_INVITE.includedMonthlyInvites +
+      result.overageBlocks * SMS_SURVEY_INVITE.overageBlockInvites +
+      1
+    );
+  }
+
+  // Tells the seller where they are against the next charge, in both directions: how much
+  // headroom is left, and what crossing it costs.
   get smsSurveyInviteOverageSummary() {
     const result = this.smsSurveyInviteResult;
+    const nextChargeAt = this.smsSurveyInviteNextChargeAt;
+    const headroom = nextChargeAt - 1 - result.monthlyInvites;
+    const blockFee = this.formatUsd(SMS_SURVEY_INVITE.overageBlockMonthlyFee);
+
     if (result.overageBlocks === 0) {
-      return "Within the included volume - no overage blocks.";
+      return `Included volume, no overage. ${headroom.toLocaleString()} invites of headroom left \u2014 the first ${blockFee}/month is added at ${nextChargeAt.toLocaleString()} invites.`;
     }
     return `${result.overageBlocks} overage block${
       result.overageBlocks === 1 ? "" : "s"
-    } of ${result.overageBlockInvites.toLocaleString()} invites.`;
+    } at ${blockFee}/month each. ${headroom.toLocaleString()} invites of headroom left \u2014 the next ${blockFee}/month is added at ${nextChargeAt.toLocaleString()} invites.`;
+  }
+
+  // The charging thresholds laid out as a table, so a seller can see at a glance where each
+  // step lands rather than inferring it from the volume they happen to have typed. Shows the
+  // included band plus enough overage bands to cover the current volume and the next step.
+  get smsSurveyInviteBands() {
+    const result = this.smsSurveyInviteResult;
+    const included = SMS_SURVEY_INVITE.includedMonthlyInvites;
+    const blockSize = SMS_SURVEY_INVITE.overageBlockInvites;
+    const blocksToShow = Math.max(3, result.overageBlocks + 1);
+
+    const bands = [
+      {
+        key: "included",
+        range: `Up to ${included.toLocaleString()}`,
+        blocks: "Base fee only",
+        monthly: this.fromUsd(SMS_SURVEY_INVITE.baseMonthlyFee),
+        isActive: result.overageBlocks === 0
+      }
+    ];
+
+    for (let block = 1; block <= blocksToShow; block += 1) {
+      const from = included + (block - 1) * blockSize + 1;
+      const to = included + block * blockSize;
+      bands.push({
+        key: `block-${block}`,
+        range: `${from.toLocaleString()} \u2013 ${to.toLocaleString()}`,
+        blocks: `+${block} block${block === 1 ? "" : "s"}`,
+        monthly: this.fromUsd(
+          SMS_SURVEY_INVITE.baseMonthlyFee +
+            block * SMS_SURVEY_INVITE.overageBlockMonthlyFee
+        ),
+        isActive: result.overageBlocks === block
+      });
+    }
+
+    return bands.map((band) => ({
+      ...band,
+      rowClass: band.isActive
+        ? "slds-is-selected slds-text-title_bold"
+        : ""
+    }));
   }
 
   // The five free-text money fields are stored in USD, like every other rate, and shown and

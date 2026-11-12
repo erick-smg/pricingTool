@@ -35,8 +35,8 @@ private class PricingToolControllerTest {
   }
 
   // This org is multi-currency, so a product can have more than one active PricebookEntry on
-  // the same price book - one per currency (see scripts/apex/setupPricingCatalogMultiCurrency.
-  // apex). Filtering to the running user's default currency here matches what a freshly
+  // the same price book - one per active currency (see scripts/apex/setupPricingCatalog.apex).
+  // Filtering to the running user's default currency here matches what a freshly
   // inserted Opportunity's own CurrencyIsoCode defaults to - without this filter, an
   // OpportunityLineItem built from a different-currency entry fails on insert with "pricebook
   // entry currency code does not match opportunity currency code".

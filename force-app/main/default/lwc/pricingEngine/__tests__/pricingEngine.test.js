@@ -298,6 +298,25 @@ describe("computeSmsSurveyInvites", () => {
     expect(computeSmsSurveyInvites("").monthlyTotal).toBe(1000);
     expect(computeSmsSurveyInvites(-500).monthlyInvites).toBe(0);
   });
+
+  it("matches the example monthly costs on the SMS pricing sheet", () => {
+    [
+      [50000, 0, 1000],
+      [100000, 0, 1000],
+      [150000, 1, 1600],
+      [250000, 3, 2800],
+      [500000, 8, 5800]
+    ].forEach(([invites, blocks, monthly]) => {
+      const result = computeSmsSurveyInvites(invites);
+      expect(result.overageBlocks).toBe(blocks);
+      expect(result.monthlyTotal).toBe(monthly);
+    });
+  });
+
+  it("flags volumes above 500,000 a month for Product review", () => {
+    expect(computeSmsSurveyInvites(500000).requiresProductReview).toBe(false);
+    expect(computeSmsSurveyInvites(500001).requiresProductReview).toBe(true);
+  });
 });
 
 describe("computeCommunityQuote", () => {
@@ -547,6 +566,35 @@ describe("computeIgniteEx", () => {
     });
     expect(result.oneTimeTotal).toBe(40000 + 10000 + 8000 + 28000);
     expect(result.annualTotal).toBe(0);
+  });
+
+  it("prices deals under 200 locations at the first band as a minimum, not as custom", () => {
+    [1, 100, 199].forEach((locations) => {
+      const result = computeIgniteEx({
+        selectedItems: [
+          "engagementOneConsultative",
+          "engagementTwoConsultative",
+          "pulse"
+        ],
+        locations,
+        pulseQuantity: 1
+      });
+      expect(result.isCustomPricing).toBe(false);
+      expect(result.lines[0].unitPrice).toBe(75000);
+      expect(result.lines[1].unitPrice).toBe(120000);
+      expect(result.annualTotal).toBe(195000);
+      expect(result.oneTimeTotal).toBe(20000);
+    });
+  });
+
+  it("does not flag exactly 10,000 locations as custom", () => {
+    const result = computeIgniteEx({
+      selectedItems: ["engagementOneConsultative"],
+      locations: 10000,
+      pulseQuantity: 0
+    });
+    expect(result.isCustomPricing).toBe(false);
+    expect(result.lines[0].unitPrice).toBe(275000);
   });
 
   it("flags 10,000+ locations as custom pricing for the banded items", () => {

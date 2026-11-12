@@ -481,6 +481,15 @@
               <p class="slds-text-body_small slds-m-bottom_small">
                 {smsSurveyInviteOverageNote}
               </p>
+              <template if:true={smsSurveyInviteResult.requiresProductReview}>
+                <div
+                  data-id="sms-survey-invite-product-review"
+                  class="slds-notify slds-notify_alert slds-alert_warning slds-m-bottom_small"
+                  role="alert"
+                >
+                  <h2>{smsSurveyInviteProductReviewMessage}</h2>
+                </div>
+              </template>
 
               <lightning-layout multiple-rows="true">
                 <lightning-layout-item size="4" padding="around-small">
@@ -520,6 +529,44 @@
                   </p>
                 </lightning-layout-item>
               </lightning-layout>
+
+              <p class="slds-text-title_caps slds-m-top_small">
+                When the extra charge is added
+              </p>
+              <div style="overflow-x: auto">
+                <table
+                  data-id="sms-survey-invite-bands"
+                  class="slds-table slds-table_bordered slds-table_cell-buffer slds-m-top_x-small"
+                >
+                  <thead>
+                    <tr class="slds-line-height_reset">
+                      <th scope="col">Invites per Month</th>
+                      <th scope="col">Overage</th>
+                      <th scope="col">Monthly Price</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template for:each={smsSurveyInviteBands} for:item="band">
+                      <tr key={band.key} class={band.rowClass}>
+                        <th scope="row">{band.range}</th>
+                        <td>{band.blocks}</td>
+                        <td>
+                          <lightning-formatted-number
+                            value={band.monthly}
+                            format-style="currency"
+                            currency-code={currencyCode}
+                          ></lightning-formatted-number>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+              <p class="slds-text-body_small slds-m-top_x-small">
+                The highlighted row is the band this quote falls in. Blocks are billed whole,
+                so the price steps up the moment a band boundary is crossed rather than rising
+                gradually with volume.
+              </p>
             </div>
           </template>
 
