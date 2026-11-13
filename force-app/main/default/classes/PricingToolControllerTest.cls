@@ -132,6 +132,138 @@ private class PricingToolControllerTest {
     System.assertEquals(60000, lines[0].UnitPrice);
   }
 
+  private static Opportunity createRenewalOpportunity(Decimal precedingAmount) {
+    RecordType renewal = [
+      SELECT Id
+      FROM RecordType
+      WHERE SobjectType = 'Opportunity' AND DeveloperName = 'Renewal_Opportunity'
+    ];
+    Opportunity opp = new Opportunity(
+      Name = 'Test Renewal Opp',
+      StageName = '1-(R) Next Year Budget Planning',
+      RecordTypeId = renewal.Id,
+      CloseDate = Date.today().addMonths(1),
+      Type = 'Renewal',
+      Preceding_Amount__c = precedingAmount
+    );
+    insert opp;
+    return opp;
+  }
+
+  private static PricingToolController.LineItemRequest lineRequest(
+    String productCode,
+    Double quantity,
+    Double unitPrice
+  ) {
+    PricingToolController.LineItemRequest request = new PricingToolController.LineItemRequest();
+    request.productCode = productCode;
+    request.quantity = quantity;
+    request.unitPrice = unitPrice;
+    return request;
+  }
+
+  @isTest
+  static void syncLineItems_renewal_setsProductTotalToPrecedingAmount() {
+    getSmgPricebook();
+    Opportunity opp = createRenewalOpportunity(100000.01);
+
+    List<PricingToolController.LineItemRequest> requests = new List<PricingToolController.LineItemRequest>{
+      lineRequest('BASE-STD-FOUND', 1, 60000),
+      lineRequest('EX-PULSE', 3, 20000),
+      lineRequest('SMS-SURVEY-INVITE', 1, 12000)
+    };
+
+    Test.startTest();
+    PricingToolController.SyncResult result = PricingToolController.syncLineItems(
+      opp.Id,
+      JSON.serialize(requests),
+      50,
+      '36 months (standard)',
+      0,
+      500
+    );
+    Test.stopTest();
+
+    System.assertEquals(3, result.lineItemCount);
+    System.assertEquals(100000.01, result.totalAmount);
+    System.assertEquals(true, result.matchedPrecedingAmount);
+
+    Decimal lineSum = 0;
+    for (OpportunityLineItem line : [
+      SELECT TotalPrice, Quantity, PricebookEntry.Product2.ProductCode
+      FROM OpportunityLineItem
+      WHERE OpportunityId = :opp.Id
+    ]) {
+      lineSum += line.TotalPrice;
+      if (line.PricebookEntry.Product2.ProductCode == 'EX-PULSE') {
+        System.assertEquals(3, line.Quantity, 'Renewal sync must keep the line quantity.');
+      }
+    }
+    System.assertEquals(100000.01, lineSum);
+    System.assertEquals(
+      100000.01,
+      [SELECT Amount FROM Opportunity WHERE Id = :opp.Id].Amount
+    );
+  }
+
+  @isTest
+  static void syncLineItems_renewalWithoutPrecedingAmount_throwsError() {
+    getSmgPricebook();
+    Opportunity opp = createRenewalOpportunity(null);
+
+    Boolean threw = false;
+    try {
+      PricingToolController.syncLineItems(
+        opp.Id,
+        JSON.serialize(
+          new List<PricingToolController.LineItemRequest>{
+            lineRequest('BASE-STD-FOUND', 1, 60000)
+          }
+        ),
+        50,
+        '36 months (standard)',
+        0,
+        500
+      );
+    } catch (AuraHandledException e) {
+      threw = true;
+      System.assert(e.getMessage().contains('GRR Baseline'), e.getMessage());
+    }
+    System.assertEquals(true, threw);
+    System.assertEquals(
+      0,
+      [SELECT COUNT() FROM OpportunityLineItem WHERE OpportunityId = :opp.Id]
+    );
+  }
+
+  @isTest
+  static void matchLineTotalsTo_splitsProportionallyAndPutsRoundingOnLargestLine() {
+    List<OpportunityLineItem> lines = new List<OpportunityLineItem>{
+      new OpportunityLineItem(Quantity = 1, UnitPrice = 1),
+      new OpportunityLineItem(Quantity = 1, UnitPrice = 1),
+      new OpportunityLineItem(Quantity = 2, UnitPrice = 1)
+    };
+
+    PricingToolController.matchLineTotalsTo(lines, 100);
+
+    System.assertEquals(25, lines[0].TotalPrice);
+    System.assertEquals(25, lines[1].TotalPrice);
+    System.assertEquals(50, lines[2].TotalPrice);
+    System.assertEquals(null, lines[0].UnitPrice);
+
+    List<OpportunityLineItem> thirds = new List<OpportunityLineItem>{
+      new OpportunityLineItem(Quantity = 1, UnitPrice = 0),
+      new OpportunityLineItem(Quantity = 1, UnitPrice = 0),
+      new OpportunityLineItem(Quantity = 1, UnitPrice = 0)
+    };
+    PricingToolController.matchLineTotalsTo(thirds, 100);
+    System.assertEquals(
+      100,
+      thirds[0].TotalPrice + thirds[1].TotalPrice + thirds[2].TotalPrice,
+      'Zero-priced lines are split evenly and must still add up exactly.'
+    );
+  }
+
   @isTest
   static void syncLineItems_rerunReplacesPriorLines() {
     Product2 product = getProduct('BASE-STD-FOUND');

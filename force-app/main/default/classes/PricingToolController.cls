@@ -1,5 +1,10 @@
 public with sharing class PricingToolController {
   private static final String PRICEBOOK_NAME = 'SMG Price Book';
+  // On a Renewal the tool only records which products the customer has - the deal value is the
+  // prior contract's, held in Preceding_Amount__c ("GRR Baseline"). The synced product total is
+  // forced to that amount whatever the tool priced the products at.
+  @TestVisible
+  private static final String RENEWAL_OPPORTUNITY_TYPE = 'Renewal';
 
   public class LineItemRequest {
     @AuraEnabled
@@ -17,6 +22,9 @@ public with sharing class PricingToolController {
     public Integer lineItemCount;
     @AuraEnabled
     public Decimal totalAmount;
+    // True when the line totals were overridden to match the Renewal's Preceding_Amount__c.
+    @AuraEnabled
+    public Boolean matchedPrecedingAmount = false;
   }
 
   public class ExistingLineItem {
@@ -133,11 +141,18 @@ public with sharing class PricingToolController {
       Id pricebookId = pricebooks[0].Id;
 
       Opportunity opp = [
-        SELECT Id, Pricebook2Id, CurrencyIsoCode
+        SELECT Id, Pricebook2Id, CurrencyIsoCode, Type, Preceding_Amount__c
         FROM Opportunity
         WHERE Id = :opportunityId
         LIMIT 1
       ];
+      Boolean isRenewal = opp.Type == RENEWAL_OPPORTUNITY_TYPE;
+      if (isRenewal && opp.Preceding_Amount__c == null) {
+        throwError(
+          'This Renewal has no GRR Baseline (Preceding Amount). Fill it in on the ' +
+            'Opportunity first - on a Renewal the product total is set to that amount.'
+        );
+      }
       opp.Pricebook2Id = pricebookId;
       opp.Rate_per_Location__c = ratePerLocation;
       opp.Term_Length__c = termLength;
@@ -196,6 +211,11 @@ public with sharing class PricingToolController {
         totalAmount += nvl(item.quantity) * nvl(item.unitPrice);
       }
 
+      if (isRenewal) {
+        matchLineTotalsTo(lineItemsToInsert, opp.Preceding_Amount__c);
+        totalAmount = opp.Preceding_Amount__c;
+      }
+
       delete [
         SELECT Id
         FROM OpportunityLineItem
@@ -209,12 +229,62 @@ public with sharing class PricingToolController {
       SyncResult result = new SyncResult();
       result.lineItemCount = lineItemsToInsert.size();
       result.totalAmount = totalAmount;
+      result.matchedPrecedingAmount = isRenewal;
       return result;
     } catch (AuraHandledException e) {
       throw e;
     } catch (Exception e) {
       throwError('Failed to sync products: ' + e.getMessage());
       return null;
+    }
+  }
+
+  /**
+   * Rewrites the lines so their TotalPrice values add up to exactly targetTotal. The target is
+   * split in proportion to what the tool priced each line at, so the relative mix of products
+   * is kept; if every line was priced at zero it is split evenly. Rounding pennies go to the
+   * largest line. TotalPrice is set instead of UnitPrice so a line's Quantity (e.g. number of
+   * pulses) is kept - Salesforce derives the unit price from it.
+   */
+  @TestVisible
+  private static void matchLineTotalsTo(
+    List<OpportunityLineItem> lines,
+    Decimal targetTotal
+  ) {
+    if (lines.isEmpty()) {
+      return;
+    }
+    List<Decimal> weights = new List<Decimal>();
+    Decimal weightSum = 0;
+    for (OpportunityLineItem line : lines) {
+      Decimal quantity = line.Quantity == null ? 0 : line.Quantity;
+      Decimal unitPrice = line.UnitPrice == null ? 0 : line.UnitPrice;
+      Decimal weight = quantity * unitPrice;
+      if (weight < 0) {
+        weight = 0;
+      }
+      weights.add(weight);
+      weightSum += weight;
+    }
+
+    Decimal allocated = 0;
+    Integer largestIndex = 0;
+    List<Decimal> shares = new List<Decimal>();
+    for (Integer i = 0; i < lines.size(); i++) {
+      Decimal share = weightSum > 0
+        ? (targetTotal * weights[i] / weightSum).setScale(2, RoundingMode.HALF_UP)
+        : (targetTotal / lines.size()).setScale(2, RoundingMode.HALF_UP);
+      shares.add(share);
+      allocated += share;
+      if (share > shares[largestIndex]) {
+        largestIndex = i;
+      }
+    }
+    shares.set(largestIndex, shares[largestIndex] + (targetTotal - allocated));
+
+    for (Integer i = 0; i < lines.size(); i++) {
+      lines[i].UnitPrice = null;
+      lines[i].TotalPrice = shares[i];
     }
   }
 

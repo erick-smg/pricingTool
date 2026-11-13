@@ -1159,6 +1159,15 @@
               </p>
             </template>
           </div>
+          <template if:true={isRenewalOpportunity}>
+            <div
+              data-id="renewal-total-notice"
+              class="slds-notify slds-notify_alert slds-alert_warning slds-m-bottom_small"
+              role="status"
+            >
+              <h2>{renewalTotalMessage}</h2>
+            </div>
+          </template>
           <div class="slds-grid slds-gutters_x-small">
             <div class="slds-col">
               <lightning-button

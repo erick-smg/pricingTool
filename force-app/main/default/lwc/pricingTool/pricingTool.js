@@ -7,6 +7,7 @@ import TERM_LENGTH_FIELD from "@salesforce/schema/Opportunity.Term_Length__c";
 import DISCOUNT_FIELD from "@salesforce/schema/Opportunity.Discount__c";
 import NUMBER_OF_LOCATIONS_FIELD from "@salesforce/schema/Opportunity.Number_of_Locations__c";
 import CURRENCY_FIELD from "@salesforce/schema/Opportunity.CurrencyIsoCode";
+import PRECEDING_AMOUNT_FIELD from "@salesforce/schema/Opportunity.Preceding_Amount__c";
 import syncLineItems from "@salesforce/apex/PricingToolController.syncLineItems";
 import getExistingLineItems from "@salesforce/apex/PricingToolController.getExistingLineItems";
 import getCurrencyConversionRates from "@salesforce/apex/PricingToolController.getCurrencyConversionRates";
@@ -234,6 +235,7 @@ const NEW_LOGO_OPPORTUNITY_TYPE = "New Logo";
 // build a standalone-add-ons quote. Every other Opportunity Type keeps the base package
 // unconditionally, same as before.
 const EXPANSION_OPPORTUNITY_TYPE = "Expansion";
+const RENEWAL_OPPORTUNITY_TYPE = "Renewal";
 const MAX_DISCOUNT_PERCENT = 10;
 
 function reverseMap(map) {
@@ -371,6 +373,8 @@ export default class PricingTool extends LightningElement {
   serviceTier = "Foundational";
   termMonths = "36";
   opportunityType = "";
+  // GRR Baseline - on a Renewal, the synced product total is forced to this amount.
+  precedingAmount = null;
   // Only meaningful when the Opportunity Type is Expansion (see includeBasePackageInQuote) -
   // ignored otherwise, since every other Opportunity Type always includes the base package.
   includeBasePackage = true;
@@ -446,7 +450,8 @@ export default class PricingTool extends LightningElement {
       TERM_LENGTH_FIELD,
       DISCOUNT_FIELD,
       NUMBER_OF_LOCATIONS_FIELD,
-      CURRENCY_FIELD
+      CURRENCY_FIELD,
+      PRECEDING_AMOUNT_FIELD
     ]
   })
   wiredOpportunity({ data }) {
@@ -455,6 +460,7 @@ export default class PricingTool extends LightningElement {
     }
 
     this.opportunityType = getFieldValue(data, OPPORTUNITY_TYPE_FIELD) || "";
+    this.precedingAmount = getFieldValue(data, PRECEDING_AMOUNT_FIELD);
     // Every amount in the tool is displayed in the Opportunity record currency. The engine
     // rates are not converted - they are the rate card in whatever currency the deal is
     // written in, matching the per-currency PricebookEntry rows the controller syncs to.
@@ -520,6 +526,26 @@ export default class PricingTool extends LightningElement {
 
   get isExpansionOpportunity() {
     return this.opportunityType === EXPANSION_OPPORTUNITY_TYPE;
+  }
+
+  // On a Renewal the tool only tracks which products the customer has. The controller sets
+  // the synced product total to the GRR Baseline (Preceding_Amount__c), whatever the tool
+  // priced the products at - these tell the rep that before they sync.
+  get isRenewalOpportunity() {
+    return this.opportunityType === RENEWAL_OPPORTUNITY_TYPE;
+  }
+
+  get renewalPrecedingAmountMissing() {
+    return this.isRenewalOpportunity && this.precedingAmount == null;
+  }
+
+  get renewalTotalMessage() {
+    if (this.renewalPrecedingAmountMissing) {
+      return "Renewal: products are tracked only, and the product total is set to the GRR Baseline. This Opportunity has no GRR Baseline yet - fill it in before adding products.";
+    }
+    return `Renewal: products are tracked only. When added, the product total is set to the GRR Baseline of ${this.formatCurrency(
+      this.precedingAmount
+    )}, split across the products in proportion to the prices below.`;
   }
 
   // False only when this is an Expansion Opportunity and the rep has explicitly unchecked the
@@ -1210,6 +1236,7 @@ export default class PricingTool extends LightningElement {
       this.isSyncingProducts ||
       !this.recordId ||
       this.locationsMissing ||
+      this.renewalPrecedingAmountMissing ||
       this.lineItemRequests.length === 0
     );
   }
@@ -1782,7 +1809,11 @@ export default class PricingTool extends LightningElement {
       this.dispatchEvent(
         new ShowToastEvent({
           title: "Products added",
-          message: `${result.lineItemCount} line item(s) added to the Opportunity.`,
+          message: result.matchedPrecedingAmount
+            ? `${result.lineItemCount} line item(s) added to the Opportunity. Renewal product total set to the GRR Baseline of ${this.formatCurrency(
+                result.totalAmount
+              )}.`
+            : `${result.lineItemCount} line item(s) added to the Opportunity.`,
           variant: "success"
         })
       );

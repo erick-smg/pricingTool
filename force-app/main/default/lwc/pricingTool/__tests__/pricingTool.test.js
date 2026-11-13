@@ -748,6 +748,58 @@ describe("c-pricing-tool", () => {
     formatted.forEach((el) => expect(el.currencyCode).toBe("USD"));
   });
 
+  it("tells the rep a Renewal's product total will be set to the GRR Baseline", async () => {
+    const element = createTool();
+    element.recordId = "006000000000001AAA";
+    await flush();
+
+    const notice = () =>
+      element.shadowRoot.querySelector('[data-id="renewal-total-notice"]');
+    expect(notice()).toBeNull();
+
+    getRecord.emit({
+      fields: {
+        Type: { value: "Renewal" },
+        Term_Length__c: { value: null },
+        Discount__c: { value: null },
+        Number_of_Locations__c: { value: null },
+        CurrencyIsoCode: { value: "USD" },
+        Preceding_Amount__c: { value: 125000 }
+      }
+    });
+    await flush();
+
+    expect(notice()).not.toBeNull();
+    expect(notice().textContent).toContain("GRR Baseline of $125,000");
+  });
+
+  it("blocks adding products on a Renewal with no GRR Baseline", async () => {
+    const element = createTool();
+    element.recordId = "006000000000001AAA";
+    await flush();
+
+    getRecord.emit({
+      fields: {
+        Type: { value: "Renewal" },
+        Term_Length__c: { value: null },
+        Discount__c: { value: null },
+        Number_of_Locations__c: { value: 100 },
+        CurrencyIsoCode: { value: "USD" },
+        Preceding_Amount__c: { value: null }
+      }
+    });
+    await flush();
+
+    expect(
+      element.shadowRoot.querySelector('[data-id="renewal-total-notice"]')
+        .textContent
+    ).toContain("no GRR Baseline yet");
+    expect(
+      element.shadowRoot.querySelector('[data-id="add-products-button"]')
+        .disabled
+    ).toBe(true);
+  });
+
   it("switches every quoted amount to the Opportunity's currency", async () => {
     const element = createTool();
     element.recordId = "006000000000001AAA";
